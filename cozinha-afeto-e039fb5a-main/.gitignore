@@ -32,7 +32,5 @@ out/
 # Vercel
 .vercel
 
-# Firebase (removidos para usar Vercel)
-firebase.json
-.firebaserc
+# Firebase
 functions/
