@@ -22,6 +22,7 @@ import {
 import { Button } from "@/components/ui/button";
 import SidebarNav from "@/components/shared/navigation";
 import { Toaster } from "@/components/ui/toaster";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 function _getCurrentPage(pathname) {
   if (pathname === "/") return "Dashboard";
@@ -103,6 +104,7 @@ export default function RootLayout({ children }) {
             {children}
           </div>
           <Toaster />
+          <SpeedInsights />
         </body>
       </html>
     );
@@ -170,6 +172,7 @@ export default function RootLayout({ children }) {
           </div>
         </div>
         <Toaster />
+        <SpeedInsights />
       </body>
     </html>
   );
