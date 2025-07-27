@@ -40,18 +40,18 @@ export default function RootLayout({ children }) {
   const isPortalRoute = pathname.startsWith('/portal');
 
   const navigation = [
-    { name: "Dashboard", href: "dashboard", icon: LayoutDashboard },
-    { name: "Receitas", href: "receitas", icon: ChefHat },
-    { name: "Ficha Técnica", href: "ficha-tecnica", icon: Clipboard },
-    { name: "Análise de Receitas", href: "analise-de-receitas", icon: TrendingUp },
-    { name: "Cardápio", href: "cardapio", icon: Utensils },
-    { name: "Pedidos", href: "pedidos", icon: ShoppingCart },
-    { name: "Ingredientes", href: "ingredientes", icon: Package },
-    { name: "Categorias", href: "categorias", icon: Tag },
-    { name: "Fornecedores e Serviços", href: "fornecedores-e-servicos", icon: Building2 },
-    { name: "Clientes", href: "clientes", icon: Users },
-    { name: "Contas", href: "contas", icon: CircleDollarSign },
-    { name: "Tabela Nutricional", href: "tabela-nutricional", icon: Apple }
+    { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+    { name: "Receitas", href: "/receitas", icon: ChefHat },
+    { name: "Ficha Técnica", href: "/ficha-tecnica", icon: Clipboard },
+    { name: "Análise de Receitas", href: "/analise-de-receitas", icon: TrendingUp },
+    { name: "Cardápio", href: "/cardapio", icon: Utensils },
+    { name: "Pedidos", href: "/pedidos", icon: ShoppingCart },
+    { name: "Ingredientes", href: "/ingredientes", icon: Package },
+    { name: "Categorias", href: "/categorias", icon: Tag },
+    { name: "Fornecedores e Serviços", href: "/fornecedores-e-servicos", icon: Building2 },
+    { name: "Clientes", href: "/clientes", icon: Users },
+    { name: "Contas", href: "/contas", icon: CircleDollarSign },
+    { name: "Tabela Nutricional", href: "/tabela-nutricional", icon: Apple }
   ];
 
   useEffect(() => {
