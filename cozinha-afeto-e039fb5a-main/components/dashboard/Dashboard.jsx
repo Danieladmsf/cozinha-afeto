@@ -51,14 +51,25 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (isClient) {
+      loadData();
+    }
+  }, [isClient]);
 
   const loadData = async () => {
     try {
       setLoading(true);
       setError(null);
       console.log("[Dashboard] Starting data load...");
+
+      // Only load data on client side to avoid build issues
+      if (typeof window === 'undefined') {
+        console.log("[Dashboard] Server-side render, skipping data load");
+        setRecipes([]);
+        setIngredients([]);
+        setLoading(false);
+        return;
+      }
 
       // Load recipes with better error handling
       console.log("[Dashboard] Loading recipes...");
