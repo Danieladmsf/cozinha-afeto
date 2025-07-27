@@ -66,7 +66,7 @@ export default function SidebarNav({
               return (
                 <Link
                   key={item.name}
-                  href={`/${item.href}`}
+                  href={item.href}
                   className={cn(
                     "sidebar-nav-item flex items-center gap-2 px-3 py-2.5 text-sm font-medium rounded-md",
                     isActive
