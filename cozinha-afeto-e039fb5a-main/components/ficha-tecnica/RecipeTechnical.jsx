@@ -58,11 +58,25 @@ export default function RecipeTechnical() {
     loading,
     saving,
     error,
+    recipeData,
+    preparationsData,
+    setRecipeData,
+    setPreparationsData,
+    isDirty,
+    setIsDirty,
     loadInitialData,
     loadRecipe: loadRecipeOperation,
     saveRecipe,
     createNewRecipe,
-    loadAllRecipes
+    loadAllRecipes,
+    categories,
+    ingredients,
+    allCategories,
+    allRecipes,
+    setAllRecipesState,
+    setCategories,
+    setIngredients,
+    setAllCategories
   } = useRecipeOperations();
 
   const {
@@ -114,34 +128,10 @@ export default function RecipeTechnical() {
     saveConfiguration,
     configSaving
   } = useRecipeConfig();
-
-  const [categories, setCategories] = useState([]);
-  const [ingredients, setIngredients] = useState([]);
-  const [recipes, setRecipes] = useState([]);
-  const [allCategories, setAllCategories] = useState([]);
-  const [allRecipes, setAllRecipesState] = useState([]);
+  
   const [filteredRecipes, setFilteredRecipes] = useState([]);
   const [filteredSourceRecipes, setFilteredSourceRecipes] = useState([]);
   const [sourceRecipeStages, setSourceRecipeStages] = useState([]);
-
-  const [recipeData, setRecipeData] = useState({
-    name: "",
-    name_complement: "",
-    category: "",
-    prep_time: 0,
-    total_weight: 0,
-    yield_weight: 0,
-    cuba_weight: 0,
-    total_cost: 0,
-    cost_per_kg_raw: 0,
-    cost_per_kg_yield: 0,
-    instructions: "",
-    active: true,
-    pre_preparo: {}
-  });
-
-  const [preparationsData, setPreparationsData] = useState([]);
-  const [isDirty, setIsDirty] = useState(false);
   const saveTimeoutRef = useRef(null);
 
   // Carregar dados iniciais e de receita
@@ -183,7 +173,7 @@ export default function RecipeTechnical() {
       toast({ variant: "destructive", title: "Erro ao Carregar Receita", description: err.message });
       resetForm();
     }
-  }, [loadRecipeOperation, startEditing, toast, updateSearchQuery]);
+  }, [loadRecipeOperation, startEditing, toast, updateSearchQuery, setRecipeData, setPreparationsData]);
 
   const resetForm = useCallback(() => {
     createNewRecipe().then(newRecipe => {
@@ -194,7 +184,7 @@ export default function RecipeTechnical() {
       updateSearchQuery('');
       window.history.replaceState({}, '', createPageUrl('RecipeTechnical', { id: 'new' }));
     });
-  }, [createNewRecipe, stopEditing, updateSearchQuery]);
+  }, [createNewRecipe, stopEditing, updateSearchQuery, setRecipeData, setPreparationsData, setIsDirty]);
 
   const handleSave = async () => {
     const { updatedRecipe, updatedPreparations } = handleRecalculate(recipeData, preparationsData);
