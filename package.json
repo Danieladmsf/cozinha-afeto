@@ -2,6 +2,6 @@
   "name": "studio-wrapper",
   "version": "1.0.0",
   "scripts": {
-    "dev": "cd cozinha-afeto-e039fb5a-main && npm run dev"
+    "dev": "cd cozinha-afeto-e039fb5a-main && npm run dev --"
   }
 }
