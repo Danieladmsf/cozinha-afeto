@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev cozinha-afeto-e039fb5a-main --port ${PORT:-9002} --hostname ${HOSTNAME:-0.0.0.0}",
-    "build": "next build cozinha-afeto-e039fb5a-main",
-    "start": "next start cozinha-afeto-e039fb5a-main",
-    "lint": "next lint cozinha-afeto-e039fb5a-main"
+    "dev": "next dev --port ${PORT:-9002} --hostname ${HOSTNAME:-0.0.0.0}",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
