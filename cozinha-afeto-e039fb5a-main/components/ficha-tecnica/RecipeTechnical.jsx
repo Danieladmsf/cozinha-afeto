@@ -249,9 +249,6 @@ export default function RecipeTechnical() {
     return () => clearTimeout(saveTimeoutRef.current);
   }, [recipeData, preparationsData, isDirty]);
   
-  // Render functions...
-  // ... (As funções de renderização serão simplificadas e movidas para cá se necessário)
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
