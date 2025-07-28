@@ -134,7 +134,7 @@ export default function RootLayout({ children }) {
         <title>Cozinha Afeto - Sistema de Gestão para Restaurantes</title>
       </head>
       <body>
-        <div className="flex h-screen bg-gray-100 main-app-container">
+        <div className="flex h-screen bg-gray-100">
 
           {sidebarOpen && (
             <div
@@ -165,8 +165,7 @@ export default function RootLayout({ children }) {
                 <Menu className="h-6 w-6" />
               </Button>
             </header>
-
-            <main className="flex-1 overflow-auto bg-gray-100 compact-ui">
+            <main className="flex-1 overflow-auto bg-gray-100 compact-ui main-app-container">
               {children}
             </main>
           </div>
