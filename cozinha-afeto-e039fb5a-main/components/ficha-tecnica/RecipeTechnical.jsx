@@ -1,3 +1,4 @@
+
 'use client';
 
 
@@ -75,7 +76,7 @@ export default function RecipeTechnical() {
     isEditing,
     currentRecipeId,
     searchQuery,
-    setSearchQuery,
+    updateSearchQuery,
     searchOpen,
     setSearchOpen,
     showConfigDialog,
@@ -177,12 +178,12 @@ export default function RecipeTechnical() {
       setRecipeData(recipe);
       setPreparationsData(recipe.processes || []);
       startEditing(id);
-      setSearchQuery(recipe.name);
+      updateSearchQuery(recipe.name);
     } catch (err) {
       toast({ variant: "destructive", title: "Erro ao Carregar Receita", description: err.message });
       resetForm();
     }
-  }, [loadRecipeOperation, startEditing, toast]);
+  }, [loadRecipeOperation, startEditing, toast, updateSearchQuery]);
 
   const resetForm = useCallback(() => {
     createNewRecipe().then(newRecipe => {
@@ -190,10 +191,10 @@ export default function RecipeTechnical() {
       setPreparationsData([]);
       stopEditing();
       setIsDirty(false);
-      setSearchQuery('');
+      updateSearchQuery('');
       window.history.replaceState({}, '', createPageUrl('RecipeTechnical', { id: 'new' }));
     });
-  }, [createNewRecipe, stopEditing]);
+  }, [createNewRecipe, stopEditing, updateSearchQuery]);
 
   const handleSave = async () => {
     const { updatedRecipe, updatedPreparations } = handleRecalculate(recipeData, preparationsData);
@@ -229,7 +230,7 @@ export default function RecipeTechnical() {
     window.history.pushState({}, '', `/recipes/technical?id=${selectedRecipeId}`);
     await loadRecipe(selectedRecipeId);
     const selectedRecipe = filteredRecipes.find(r => r.id === selectedRecipeId);
-    if (selectedRecipe) setSearchQuery(selectedRecipe.name);
+    if (selectedRecipe) updateSearchQuery(selectedRecipe.name);
     setSearchOpen(false);
   };
   
