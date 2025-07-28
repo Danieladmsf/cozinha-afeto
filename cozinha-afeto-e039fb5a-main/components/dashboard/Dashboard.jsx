@@ -10,108 +10,62 @@ import { pt } from "date-fns/locale";
 import { Cookie, Package } from "lucide-react";
 
 export default function Dashboard() {
-  const [isClient, setIsClient] = useState(false);
-  
-  // Hydration guard
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
-
-  // Adicionar tags de cabeçalho estruturado para SEO
-  useEffect(() => {
-    // Adicionar dados estruturados JSON-LD para SEO
-    const structuredData = {
-      "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      "name": "Cozinha Afeto",
-      "description": "Sistema de gestão completo para restaurantes",
-      "url": "http://localhost:9000",
-      "applicationCategory": "RestaurantManagement",
-      "operatingSystem": "Web",
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "BRL"
-      }
-    };
-
-    const script = document.createElement('script');
-    script.type = 'application/ld+json';
-    script.textContent = JSON.stringify(structuredData);
-    document.head.appendChild(script);
-
-    return () => {
-      const scripts = document.querySelectorAll('script[type="application/ld+json"]');
-      scripts.forEach(script => script.remove());
-    };
-  }, []);
   const [recipes, setRecipes] = useState([]);
   const [ingredients, setIngredients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (isClient) {
-      loadData();
-    }
-  }, [isClient]);
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        console.log("[Dashboard] Starting data load...");
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      console.log("[Dashboard] Starting data load...");
+        // Load recipes with better error handling
+        console.log("[Dashboard] Loading recipes...");
+        const recipesData = await Recipe.getAll().catch(error => {
+          console.error("[Dashboard] Error loading recipes:", error);
+          return []; // Return empty array on error instead of throwing
+        });
+        console.log("[Dashboard] Loaded", recipesData?.length || 0, "recipes");
 
-      // Only load data on client side to avoid build issues
-      if (typeof window === 'undefined') {
-        console.log("[Dashboard] Server-side render, skipping data load");
-        setRecipes([]);
-        setIngredients([]);
+        // Add small delay between requests
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Load ingredients with better error handling
+        console.log("[Dashboard] Loading ingredients...");
+        const ingredientsData = await Ingredient.getAll().catch(error => {
+          console.error("[Dashboard] Error loading ingredients:", error);
+          return []; // Return empty array on error instead of throwing
+        });
+        console.log("[Dashboard] Loaded", ingredientsData?.length || 0, "ingredients");
+
+        // Garantir que todos os dados tenham IDs válidos
+        const validatedRecipes = (recipesData || []).map((recipe, index) => ({
+          ...recipe,
+          id: recipe.id || `recipe-${index}-${Date.now()}`
+        }));
+
+        const validatedIngredients = (ingredientsData || []).map((ingredient, index) => ({
+          ...ingredient,
+          id: ingredient.id || `ingredient-${index}-${Date.now()}`
+        }));
+
+        setRecipes(validatedRecipes);
+        setIngredients(validatedIngredients);
+        console.log("[Dashboard] Data load completed successfully");
+      } catch (error) {
+        console.error("[Dashboard] Critical error loading data:", error);
+        setError("Erro ao carregar dados. Por favor, recarregue a página.");
+      } finally {
         setLoading(false);
-        return;
+        console.log("[Dashboard] Loading state set to false");
       }
-
-      // Load recipes with better error handling
-      console.log("[Dashboard] Loading recipes...");
-      const recipesData = await Recipe.getAll().catch(error => {
-        console.error("[Dashboard] Error loading recipes:", error);
-        return []; // Return empty array on error instead of throwing
-      });
-      console.log("[Dashboard] Loaded", recipesData?.length || 0, "recipes");
-
-      // Add small delay between requests
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Load ingredients with better error handling
-      console.log("[Dashboard] Loading ingredients...");
-      const ingredientsData = await Ingredient.getAll().catch(error => {
-        console.error("[Dashboard] Error loading ingredients:", error);
-        return []; // Return empty array on error instead of throwing
-      });
-      console.log("[Dashboard] Loaded", ingredientsData?.length || 0, "ingredients");
-
-      // Garantir que todos os dados tenham IDs válidos
-      const validatedRecipes = (recipesData || []).map((recipe, index) => ({
-        ...recipe,
-        id: recipe.id || `recipe-${index}-${Date.now()}`
-      }));
-
-      const validatedIngredients = (ingredientsData || []).map((ingredient, index) => ({
-        ...ingredient,
-        id: ingredient.id || `ingredient-${index}-${Date.now()}`
-      }));
-
-      setRecipes(validatedRecipes);
-      setIngredients(validatedIngredients);
-      console.log("[Dashboard] Data load completed successfully");
-    } catch (error) {
-      console.error("[Dashboard] Critical error loading data:", error);
-      setError("Erro ao carregar dados. Por favor, recarregue a página.");
-    } finally {
-      setLoading(false);
-      console.log("[Dashboard] Loading state set to false");
-    }
-  };
+    };
+    
+    loadData();
+  }, []);
 
   // Helper function to retry requests with delay
   const retryWithDelay = async (fn, retries = 3, delay = 2000) => {
@@ -151,7 +105,7 @@ export default function Dashboard() {
   const profitableRecipes = getMostProfitableRecipes();
 
   // Show loading during hydration
-  if (!isClient || loading) {
+  if (loading) {
     return (
       <div className="p-8 space-y-4">
         <div className="text-lg font-medium">Carregando...</div>
