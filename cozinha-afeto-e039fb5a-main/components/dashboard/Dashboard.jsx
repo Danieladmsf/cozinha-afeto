@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import { Recipe } from "@/app/api/entities";
 import { Ingredient } from "@/app/api/entities";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,75 +10,172 @@ import { pt } from "date-fns/locale";
 import { Cookie, Package } from "lucide-react";
 
 export default function Dashboard() {
+  const [isClient, setIsClient] = useState(false);
+  
+  // Hydration guard
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  // Adicionar tags de cabeçalho estruturado para SEO
+  useEffect(() => {
+    // Adicionar dados estruturados JSON-LD para SEO
+    const structuredData = {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Cozinha Afeto",
+      "description": "Sistema de gestão completo para restaurantes",
+      "url": "http://localhost:9000",
+      "applicationCategory": "RestaurantManagement",
+      "operatingSystem": "Web",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "BRL"
+      }
+    };
+
+    const script = document.createElement('script');
+    script.type = 'application/ld+json';
+    script.textContent = JSON.stringify(structuredData);
+    document.head.appendChild(script);
+
+    return () => {
+      const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+      scripts.forEach(script => script.remove());
+    };
+  }, []);
   const [recipes, setRecipes] = useState([]);
   const [ingredients, setIngredients] = useState([]);
-  const [profitableRecipes, setProfitableRecipes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        console.log("[Dashboard] Starting data load...");
+    if (isClient) {
+      loadData();
+    }
+  }, [isClient]);
 
-        const recipesData = await Recipe.getAll().catch(error => {
-          console.error("[Dashboard] Error loading recipes:", error);
-          return [];
-        });
-        console.log("[Dashboard] Loaded", recipesData?.length || 0, "recipes");
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      console.log("[Dashboard] Starting data load...");
 
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        const ingredientsData = await Ingredient.getAll().catch(error => {
-          console.error("[Dashboard] Error loading ingredients:", error);
-          return [];
-        });
-        console.log("[Dashboard] Loaded", ingredientsData?.length || 0, "ingredients");
-
-        const validatedRecipes = (recipesData || []).map((recipe, index) => ({
-          ...recipe,
-          id: recipe.id || `recipe-${index}-${Date.now()}`
-        }));
-
-        const validatedIngredients = (ingredientsData || []).map((ingredient, index) => ({
-          ...ingredient,
-          id: ingredient.id || `ingredient-${index}-${Date.now()}`
-        }));
-
-        setRecipes(validatedRecipes);
-        setIngredients(validatedIngredients);
-
-        // Move calculation logic inside useEffect
-        const mostProfitable = validatedRecipes
-          .filter(recipe => recipe.active)
-          .sort((a, b) => {
-            const aCost = a.cost_per_gram_yield || 0;
-            const bCost = b.cost_per_gram_yield || 0;
-            
-            if (aCost === 0 && bCost === 0) return 0;
-            if (aCost === 0) return 1;
-            if (bCost === 0) return -1;
-            
-            return aCost - bCost;
-          })
-          .slice(0, 5);
-        
-        setProfitableRecipes(mostProfitable);
-
-        console.log("[Dashboard] Data load completed successfully");
-      } catch (error) {
-        console.error("[Dashboard] Critical error loading data:", error);
-        setError("Erro ao carregar dados. Por favor, recarregue a página.");
-      } finally {
+      // Only load data on client side to avoid build issues
+      if (typeof window === 'undefined') {
+        console.log("[Dashboard] Server-side render, skipping data load");
+        setRecipes([]);
+        setIngredients([]);
         setLoading(false);
-        console.log("[Dashboard] Loading state set to false");
+        return;
       }
-    };
-    
-    loadData();
-  }, []);
+
+      // Load recipes with better error handling
+      console.log("[Dashboard] Loading recipes...");
+      const recipesData = await Recipe.getAll().catch(error => {
+        console.error("[Dashboard] Error loading recipes:", error);
+        return []; // Return empty array on error instead of throwing
+      });
+      console.log("[Dashboard] Loaded", recipesData?.length || 0, "recipes");
+
+      // Add small delay between requests
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Load ingredients with better error handling
+      console.log("[Dashboard] Loading ingredients...");
+      const ingredientsData = await Ingredient.getAll().catch(error => {
+        console.error("[Dashboard] Error loading ingredients:", error);
+        return []; // Return empty array on error instead of throwing
+      });
+      console.log("[Dashboard] Loaded", ingredientsData?.length || 0, "ingredients");
+
+      // Garantir que todos os dados tenham IDs válidos
+      const validatedRecipes = (recipesData || []).map((recipe, index) => ({
+        ...recipe,
+        id: recipe.id || `recipe-${index}-${Date.now()}`
+      }));
+
+      const validatedIngredients = (ingredientsData || []).map((ingredient, index) => ({
+        ...ingredient,
+        id: ingredient.id || `ingredient-${index}-${Date.now()}`
+      }));
+
+      setRecipes(validatedRecipes);
+      setIngredients(validatedIngredients);
+      console.log("[Dashboard] Data load completed successfully");
+    } catch (error) {
+      console.error("[Dashboard] Critical error loading data:", error);
+      setError("Erro ao carregar dados. Por favor, recarregue a página.");
+    } finally {
+      setLoading(false);
+      console.log("[Dashboard] Loading state set to false");
+    }
+  };
+
+  // Helper function to retry requests with delay
+  const retryWithDelay = async (fn, retries = 3, delay = 2000) => {
+    try {
+      return await fn();
+    } catch (error) {
+      if (retries > 0 && error?.response?.status === 429) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return retryWithDelay(fn, retries - 1, delay * 1.5);
+      }
+      throw error;
+    }
+  };
+
+  const getMostProfitableRecipes = () => {
+    return recipes
+      .filter(recipe => recipe.active)
+      .sort((a, b) => {
+        const aCost = a.cost_per_gram_yield || 0;
+        const bCost = b.cost_per_gram_yield || 0;
+        
+        if (aCost === 0 && bCost === 0) {
+          return 0;
+        }
+        if (aCost === 0) {
+          return 1;
+        }
+        if (bCost === 0) {
+          return -1;
+        }
+        
+        return aCost - bCost;
+      })
+      .slice(0, 5);
+  };
+
+  const profitableRecipes = getMostProfitableRecipes();
+
+  // Show loading during hydration
+  if (!isClient || loading) {
+    return (
+      <div className="p-8 space-y-4">
+        <div className="text-lg font-medium">Carregando...</div>
+        <div className="text-sm text-gray-600">Aguarde enquanto carregamos os dados do dashboard.</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-8">
+        <div className="bg-red-50 border border-red-200 rounded-md p-4">
+          <div className="text-red-800 font-medium">Erro no Dashboard</div>
+          <div className="text-red-700 text-sm mt-1">{error}</div>
+          <button
+            onClick={loadData}
+            className="mt-3 px-4 py-2 bg-red-100 text-red-800 text-sm rounded hover:bg-red-200"
+          >
+            Tentar novamente
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const formatCostPerGram = (value) => {
     if (value === null || value === undefined || isNaN(value)) {
@@ -96,32 +193,6 @@ export default function Dashboard() {
       return `${weight} g`;
     }
   };
-
-  if (loading) {
-    return (
-      <div className="p-8 space-y-4">
-        <div className="text-lg font-medium">Carregando...</div>
-        <div className="text-sm text-gray-600">Aguarde enquanto carregamos os dados do dashboard.</div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-8">
-        <div className="bg-red-50 border border-red-200 rounded-md p-4">
-          <div className="text-red-800 font-medium">Erro no Dashboard</div>
-          <div className="text-red-700 text-sm mt-1">{error}</div>
-          <button
-            onClick={() => window.location.reload()}
-            className="mt-3 px-4 py-2 bg-red-100 text-red-800 text-sm rounded hover:bg-red-200"
-          >
-            Tentar novamente
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="p-4 md:p-8 space-y-6">
