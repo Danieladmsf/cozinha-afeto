@@ -13,7 +13,7 @@ import {
   ChevronUp, 
   Calculator 
 } from "lucide-react";
-import RecipeTechnicalPrintDialog from "./RecipeTechnicalPrintDialog";
+import RecipeSimplePrintDialog from "./RecipeSimplePrintDialog";
 import { RecipeValidator } from "../utils/recipeValidator";
 import { RecipeCalculator } from "../utils/recipeCalculator";
 
@@ -269,35 +269,35 @@ export default function RecipeTechnicalDisplay({ recipe, preparations = [] }) {
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <p className="opacity-80">Peso Bruto Original:</p>
-                    <p className="font-bold">{formatWeight(originalRecipe.total_weight)}​</p>
+                    <p className="font-bold">{formatWeight(originalRecipe.total_weight)}</p>
                   </div>
                   <div>
                     <p className="opacity-80">Peso Bruto Corrigido:</p>
-                    <p className="font-bold">{formatWeight(validatedRecipe.total_weight)}​</p>
+                    <p className="font-bold">{formatWeight(validatedRecipe.total_weight)}</p>
                   </div>
                   <div>
                     <p className="opacity-80">Rendimento Original:</p>
-                    <p className="font-bold">{formatWeight(originalRecipe.yield_weight)}​</p>
+                    <p className="font-bold">{formatWeight(originalRecipe.yield_weight)}</p>
                   </div>
                   <div>
                     <p className="opacity-80">Rendimento Corrigido:</p>
-                    <p className="font-bold">{formatWeight(validatedRecipe.yield_weight)}​</p>
+                    <p className="font-bold">{formatWeight(validatedRecipe.yield_weight)}</p>
                   </div>
                   <div>
                     <p className="opacity-80">Custo/kg (Bruto) Original:</p>
-                    <p className="font-bold">{formatCurrency(originalRecipe.cost_per_kg_raw)}​</p>
+                    <p className="font-bold">{formatCurrency(originalRecipe.cost_per_kg_raw)}</p>
                   </div>
                   <div>
                     <p className="opacity-80">Custo/kg (Bruto) Corrigido:</p>
-                    <p className="font-bold">{formatCurrency(validatedRecipe.cost_per_kg_raw)}​</p>
+                    <p className="font-bold">{formatCurrency(validatedRecipe.cost_per_kg_raw)}</p>
                   </div>
                   <div>
                     <p className="opacity-80">Custo/kg (Rendimento) Original:</p>
-                    <p className="font-bold">{formatCurrency(originalRecipe.cost_per_kg_yield)}​</p>
+                    <p className="font-bold">{formatCurrency(originalRecipe.cost_per_kg_yield)}</p>
                   </div>
                   <div>
                     <p className="opacity-80">Custo/kg (Rendimento) Corrigido:</p>
-                    <p className="font-bold">{formatCurrency(validatedRecipe.cost_per_kg_yield)}​</p>
+                    <p className="font-bold">{formatCurrency(validatedRecipe.cost_per_kg_yield)}</p>
                   </div>
                 </div>
               </div>
@@ -456,7 +456,7 @@ export default function RecipeTechnicalDisplay({ recipe, preparations = [] }) {
       </Card>
 
       {/* Dialog para impressão */}
-      <RecipeTechnicalPrintDialog
+      <RecipeSimplePrintDialog
         recipe={recalculationResult?.recipe || validatedRecipe}
         preparations={validatedData.preparations}
         isOpen={showPrintDialog}
