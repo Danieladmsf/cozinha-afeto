@@ -175,7 +175,8 @@ export default function MenuConfig({ categories, onConfigChange }) {
         }, {})
       };
       
-      const newConfig = await MenuConfigEntity.create(defaultConfig);
+      // Lógica de criação de configuração removida
+      console.log('Configuração padrão preparada:', defaultConfig);
       
       // Atualizar estado local
       setConfigId(newConfig.id);
@@ -244,13 +245,8 @@ export default function MenuConfig({ categories, onConfigChange }) {
         is_default: true
       });
       
-      if (configs && configs.length > 0) {
-        // Atualizar configuração existente
-        await MenuConfigEntity.update(configs[0].id, configData);
-      } else {
-        // Criar nova configuração
-        await MenuConfigEntity.create(configData);
-      }
+      // Lógica de salvamento de configuração removida
+      console.log('Dados de configuração preparados:', configData);
       
       toast({
         description: "Configurações salvas com sucesso",

@@ -7,17 +7,19 @@ import { useToast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
 
 // Entities
-import { Customer } from "@/app/api/entities";
-import { Recipe } from "@/app/api/entities";
-import { WeeklyMenu } from "@/app/api/entities";
-import { Order } from "@/app/api/entities";
-import { OrderWaste } from "@/app/api/entities";
+import { 
+  Customer, 
+  Recipe, 
+  WeeklyMenu, 
+  Order, 
+  OrderReceiving, 
+  OrderWaste 
+} from "@/app/api/entities";
 
 // Componentes UI
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -30,11 +32,13 @@ import {
   CircleDollarSign,
   ChevronLeft,
   ChevronRight,
-  Settings,
   Send,
   Utensils,
   AlertTriangle,
-  Loader2
+  Loader2,
+  Check,
+  X,
+  CheckCircle
 } from "lucide-react";
 
 // Utilitários
@@ -45,16 +49,21 @@ import {
   formatWeight as utilFormatWeight 
 } from "@/components/utils/orderUtils";
 
-import { prepareWasteItemsForDisplay, calculateWasteTotalsAndDiscount } from "@/components/utils/wasteLogic";
-import { 
-  normalizeNumericInputString,
-  validateNumericOnCommit,
-  formatQuantityForDisplay,
-  formatCurrency,
-  WASTE_CONSTANTS
-} from "@/lib/sobrasUtils";
-
 import { useCategoryDisplay } from "@/hooks/shared/useCategoryDisplay";
+
+// Utilitário para cálculos de depreciação
+import { 
+  calculateTotalDepreciation, 
+  calculateFinalOrderValue,
+  formatCurrency as returnFormatCurrency,
+  formatQuantity as returnFormatQuantity
+} from "@/lib/returnCalculator";
+
+// Tab Components
+import OrdersTab from "./tabs/OrdersTab";
+import ReceivingTab from "./tabs/ReceivingTab";
+import WasteTab from "./tabs/WasteTab";
+import HistoryTab from "./tabs/HistoryTab";
 
 const MobileOrdersPage = ({ customerId }) => {
   const { toast } = useToast();
@@ -66,18 +75,33 @@ const MobileOrdersPage = ({ customerId }) => {
   const [recipes, setRecipes] = useState([]);
   const [weeklyMenus, setWeeklyMenus] = useState([]);
   const [currentOrder, setCurrentOrder] = useState(null);
+  const [existingOrders, setExistingOrders] = useState({});
   const [loading, setLoading] = useState(true);
   
   // UI States
-  const [activeTab, setActiveTab] = useState("orders"); // orders, receive, waste
+  const [activeTab, setActiveTab] = useState("orders");
   const [mealsExpected, setMealsExpected] = useState(0);
   const [generalNotes, setGeneralNotes] = useState("");
+  const [isEditMode, setIsEditMode] = useState(true);
+  const [showSuccessEffect, setShowSuccessEffect] = useState(false);
+  const [showReceivingSuccessEffect, setShowReceivingSuccessEffect] = useState(false);
+  const [showWasteSuccessEffect, setShowWasteSuccessEffect] = useState(false);
+  
+  // Estados de edição para outras abas
+  const [isReceivingEditMode, setIsReceivingEditMode] = useState(true);
+  const [isWasteEditMode, setIsWasteEditMode] = useState(true);
   
   // Estados para Sobras
   const [wasteItems, setWasteItems] = useState([]);
   const [wasteNotes, setWasteNotes] = useState("");
   const [existingWaste, setExistingWaste] = useState(null);
   const [wasteLoading, setWasteLoading] = useState(false);
+
+  // Estados para Recebimento
+  const [receivingItems, setReceivingItems] = useState([]);
+  const [receivingNotes, setReceivingNotes] = useState("");
+  const [existingReceiving, setExistingReceiving] = useState(null);
+  const [receivingLoading, setReceivingLoading] = useState(false);
 
   // Calculados
   const weekStart = useMemo(() => startOfWeek(currentDate, { weekStartsOn: 1 }), [currentDate]);
@@ -93,14 +117,48 @@ const MobileOrdersPage = ({ customerId }) => {
         date,
         dayNumber: i + 1,
         dayName: format(date, 'EEEE', { locale: ptBR }),
-        shortDayName: format(date, 'EEE', { locale: ptBR }),
-        formattedDate: format(date, 'dd/MM')
+        dayShort: format(date, 'EEE', { locale: ptBR }),
+        dayDate: format(date, 'dd/MM', { locale: ptBR })
       });
     }
     return days;
   }, [weekStart]);
 
   const [selectedDay, setSelectedDay] = useState(1);
+
+  // Carregar pedidos existentes da semana
+  const loadExistingOrders = useCallback(async () => {
+    if (!customer) return;
+    
+    try {
+      const orders = await Order.query([
+        { field: 'customer_id', operator: '==', value: customer.id },
+        { field: 'week_number', operator: '==', value: weekNumber },
+        { field: 'year', operator: '==', value: year }
+      ]);
+      
+      // Organizar por dia da semana
+      const ordersByDay = {};
+      orders.forEach(order => {
+        ordersByDay[order.day_of_week] = order;
+      });
+      
+      setExistingOrders(ordersByDay);
+      
+      
+      // Se existe pedido para o dia atual, carregar ele
+      const currentDayOrder = ordersByDay[selectedDay];
+      if (currentDayOrder) {
+        setCurrentOrder(currentDayOrder);
+        setMealsExpected(currentDayOrder.total_meals_expected || 0);
+        setGeneralNotes(currentDayOrder.general_notes || "");
+        setIsEditMode(false);
+      }
+      
+    } catch (error) {
+      console.error("Erro ao carregar pedidos existentes:", error);
+    }
+  }, [customer, weekNumber, year, selectedDay]);
 
   // Funções para Sobras
   const loadWasteData = useCallback(async () => {
@@ -119,8 +177,11 @@ const MobileOrdersPage = ({ customerId }) => {
       const wasteRecord = existingWastes.length > 0 ? existingWastes[0] : null;
       setExistingWaste(wasteRecord);
       setWasteNotes(wasteRecord?.general_notes || "");
+      
+      // Definir modo de edição baseado se já existe dados salvos
+      setIsWasteEditMode(!wasteRecord);
 
-      // Preparar itens para display de sobras
+      // Criar itens simples baseados no cardápio
       const menu = weeklyMenus[0];
       const menuData = menu?.menu_data?.[selectedDay];
       
@@ -129,73 +190,329 @@ const MobileOrdersPage = ({ customerId }) => {
         return;
       }
 
-      // Buscar pedidos para este dia para referência
-      const dayOrders = await Order.query([
+      const items = [];
+      let uniqueCounter = 0;
+      Object.entries(menuData).forEach(([categoryId, categoryData]) => {
+        // Verificar se categoryData é um array direto ou tem propriedade items
+        const itemsArray = Array.isArray(categoryData) ? categoryData : categoryData.items;
+        
+        if (itemsArray && Array.isArray(itemsArray)) {
+          itemsArray.forEach(item => {
+            // Verificar se deve incluir este item baseado em locations
+            const itemLocations = item.locations;
+            const shouldInclude = !itemLocations || itemLocations.length === 0 || 
+                                 itemLocations.includes(customer.id);
+
+            if (shouldInclude) {
+              const recipe = recipes.find(r => r.id === item.recipe_id && r.active !== false);
+              if (recipe) {
+                const wasteItem = {
+                  unique_id: `${item.recipe_id}_${uniqueCounter++}`,
+                  recipe_id: recipe.id,
+                  recipe_name: recipe.name,
+                  category: recipe.category || categoryId,
+                  internal_waste_quantity: 0,
+                  client_returned_quantity: 0,
+                  notes: "",
+                  ordered_quantity: 0,
+                  ordered_unit_type: "kg"
+                };
+                
+                // Buscar informações do pedido para este item
+                const existingOrder = existingOrders[selectedDay];
+                if (existingOrder?.items) {
+                  // Buscar por unique_id primeiro (mais preciso)
+                  let orderItem = existingOrder.items.find(oi => oi.unique_id === wasteItem.unique_id);
+                  if (!orderItem) {
+                    // Fallback: buscar por recipe_id (para compatibilidade com dados antigos)
+                    orderItem = existingOrder.items.find(oi => oi.recipe_id === recipe.id);
+                  }
+                  
+                  if (orderItem) {
+                    wasteItem.ordered_quantity = orderItem.quantity || 0;
+                    wasteItem.ordered_unit_type = orderItem.unit_type || "kg";
+                  }
+                }
+                
+                // Se há dados salvos, usar eles
+                if (wasteRecord?.items) {
+                  let saved = wasteRecord.items.find(s => s.unique_id === wasteItem.unique_id);
+                  if (!saved) {
+                    // Fallback: buscar por recipe_id (para compatibilidade)
+                    saved = wasteRecord.items.find(s => s.recipe_id === recipe.id);
+                  }
+                  
+                  if (saved) {
+                    wasteItem.internal_waste_quantity = saved.internal_waste_quantity || 0;
+                    wasteItem.client_returned_quantity = saved.client_returned_quantity || 0;
+                    wasteItem.notes = saved.notes || "";
+                  }
+                }
+                
+                items.push(wasteItem);
+              }
+            }
+          });
+        }
+      });
+
+      setWasteItems(items);
+    } catch (error) {
+      toast({ variant: "destructive", description: "Erro ao carregar dados de sobras." });
+    } finally {
+      setWasteLoading(false);
+    }
+  }, [customer, weeklyMenus, recipes, weekNumber, year, selectedDay, existingOrders, toast]);
+
+  // Funções para Recebimento
+  const loadReceivingData = useCallback(async () => {
+    if (!customer || !weeklyMenus.length || !recipes.length) {
+      return;
+    }
+    setReceivingLoading(true);
+    try {
+      // Buscar registro de recebimento existente
+      const existingReceivings = await OrderReceiving.query([
         { field: 'customer_id', operator: '==', value: customer.id },
         { field: 'week_number', operator: '==', value: weekNumber },
         { field: 'year', operator: '==', value: year },
         { field: 'day_of_week', operator: '==', value: selectedDay }
       ]);
 
-      const basePreparedItems = prepareWasteItemsForDisplay(
-        customer,
-        selectedDay,
-        menuData,
-        recipes,
-        null,
-        dayOrders
-      );
+      const receivingRecord = existingReceivings.length > 0 ? existingReceivings[0] : null;
+      setExistingReceiving(receivingRecord);
+      setReceivingNotes(receivingRecord?.general_notes || "");
+      
+      // Definir modo de edição baseado se já existe dados salvos
+      setIsReceivingEditMode(!receivingRecord);
 
-      let initialItems = [];
-      if (wasteRecord && wasteRecord.items) {
-        // Mesclar com dados existentes
-        const itemsMergedWithExisting = basePreparedItems.map(baseItem => {
-          const savedItemData = wasteRecord.items.find(ei => ei.recipe_id === baseItem.recipe_id);
-          return {
-            ...baseItem,
-            internal_waste_quantity: savedItemData?.internal_waste_quantity || 0,
-            internal_waste_unit_type: savedItemData?.internal_waste_unit_type || baseItem.internal_waste_unit_type,
-            client_returned_quantity: savedItemData?.client_returned_quantity || 0,
-            client_returned_unit_type: savedItemData?.client_returned_unit_type || baseItem.client_returned_unit_type,
-            payment_percentage: savedItemData?.payment_percentage || WASTE_CONSTANTS.DEFAULT_PAYMENT_PERCENTAGE,
-            notes: savedItemData?.notes || '',
-          };
-        });
-        const calculatedFromExisting = calculateWasteTotalsAndDiscount(itemsMergedWithExisting);
-        initialItems = calculatedFromExisting.items_with_final_value_for_ui;
-      } else {
-        // Novos itens com valores padrão
-        const initialCalculated = calculateWasteTotalsAndDiscount(basePreparedItems);
-        initialItems = initialCalculated.items_with_final_value_for_ui;
+      // Criar itens de recebimento baseados no cardápio (como a aba de pedidos)
+      const menu = weeklyMenus[0];
+      const menuData = menu?.menu_data?.[selectedDay];
+      
+      
+      if (!menuData) {
+        setReceivingItems([]);
+        return;
       }
 
-      setWasteItems(initialItems);
+      const items = [];
+      let uniqueCounter = 0;
+      Object.entries(menuData).forEach(([categoryId, categoryData]) => {
+        // Verificar se categoryData é um array direto ou tem propriedade items
+        const itemsArray = Array.isArray(categoryData) ? categoryData : categoryData.items;
+        
+        if (itemsArray && Array.isArray(itemsArray)) {
+          itemsArray.forEach((item) => {
+            // Verificar se deve incluir este item baseado em locations
+            const itemLocations = item.locations;
+            const shouldInclude = !itemLocations || itemLocations.length === 0 || 
+                                 itemLocations.includes(customer.id);
+
+            if (shouldInclude) {
+              const recipe = recipes.find(r => r.id === item.recipe_id && r.active !== false);
+              if (recipe) {
+                // Buscar container_type na estrutura correta
+                let containerType = "cuba"; // default
+                if (recipe.preparations && recipe.preparations.length > 0) {
+                  const lastPrep = recipe.preparations[recipe.preparations.length - 1];
+                  if (lastPrep.assembly_config?.container_type) {
+                    containerType = lastPrep.assembly_config.container_type.toLowerCase();
+                  }
+                }
+                
+                // Se não encontrou, verificar se tem direto na receita
+                if (!containerType || containerType === "cuba") {
+                  if (recipe.container_type) {
+                    containerType = recipe.container_type.toLowerCase();
+                  }
+                }
+
+                const receivingItem = {
+                  unique_id: `${item.recipe_id}_${uniqueCounter++}`,
+                  recipe_id: item.recipe_id,
+                  recipe_name: recipe.name,
+                  category: recipe.category || categoryId,
+                  ordered_quantity: 0, // padrão
+                  ordered_unit_type: containerType,
+                  status: 'pending', // pending, received, partial
+                  received_quantity: 0, // padrão
+                  notes: ""
+                };
+                
+                // Se há pedido existente, usar os dados do pedido
+                const existingOrder = existingOrders[selectedDay];
+                if (existingOrder?.items) {
+                  // Buscar o item correspondente usando unique_id primeiro, depois recipe_id
+                  let orderItem = existingOrder.items.find(oi => oi.unique_id === receivingItem.unique_id);
+                  if (!orderItem) {
+                    // Fallback: buscar por recipe_id (para compatibilidade com dados antigos)
+                    orderItem = existingOrder.items.find(oi => oi.recipe_id === item.recipe_id);
+                  }
+                  
+                  if (orderItem) {
+                    receivingItem.ordered_quantity = orderItem.quantity;
+                    receivingItem.ordered_unit_type = orderItem.unit_type;
+                    receivingItem.received_quantity = orderItem.quantity; // default para quantidade pedida
+                  }
+                }
+                
+                // Se há dados salvos de recebimento, usar eles
+                if (receivingRecord?.items) {
+                  let saved = receivingRecord.items.find(s => s.unique_id === receivingItem.unique_id);
+                  if (!saved) {
+                    // Fallback: buscar por recipe_id (para compatibilidade)
+                    saved = receivingRecord.items.find(s => s.recipe_id === item.recipe_id);
+                  }
+                  
+                  if (saved) {
+                    receivingItem.status = saved.status || 'pending';
+                    receivingItem.received_quantity = saved.received_quantity || receivingItem.received_quantity;
+                    receivingItem.notes = saved.notes || "";
+                  }
+                }
+                
+                items.push(receivingItem);
+              }
+            }
+          });
+        }
+      });
+
+      setReceivingItems(items);
     } catch (error) {
-      console.error("Erro ao carregar dados de sobras:", error);
-      toast({ variant: "destructive", description: "Erro ao carregar dados de sobras." });
+      console.error("Erro ao carregar dados de recebimento:", error);
+      toast({ variant: "destructive", description: "Erro ao carregar dados de recebimento." });
     } finally {
-      setWasteLoading(false);
+      setReceivingLoading(false);
     }
-  }, [customer, weeklyMenus, recipes, weekNumber, year, selectedDay, toast]);
+  }, [customer, weeklyMenus, recipes, weekNumber, year, selectedDay, existingOrders, toast]);
+
+  const updateReceivingItem = useCallback((index, field, value) => {
+    setReceivingItems(prevItems => {
+      const updatedItems = [...prevItems];
+      const item = { ...updatedItems[index] };
+      
+      if (field === 'received_quantity') {
+        item.received_quantity = Math.max(0, parseFloat(value) || 0);
+        // Atualizar status baseado na quantidade recebida
+        if (item.received_quantity === 0) {
+          item.status = 'not_received';
+        } else if (item.received_quantity === item.ordered_quantity) {
+          item.status = 'received';
+        } else {
+          item.status = 'partial';
+        }
+      } else if (field === 'status') {
+        item.status = value;
+        // Ajustar quantidade baseada no status
+        if (value === 'received') {
+          item.received_quantity = item.ordered_quantity;
+        } else if (value === 'not_received') {
+          item.received_quantity = 0;
+        }
+        // Para partial, mantém a quantidade atual
+      } else {
+        item[field] = value;
+      }
+      
+      updatedItems[index] = item;
+      return updatedItems;
+    });
+  }, []);
+
+  const markAllAsReceived = useCallback(() => {
+    setReceivingItems(prevItems => 
+      prevItems.map(item => ({
+        ...item,
+        status: 'received',
+        received_quantity: item.ordered_quantity
+      }))
+    );
+  }, []);
+
+  const saveReceivingData = useCallback(async () => {
+    if (!customer || receivingItems.length === 0) return;
+
+    try {
+      // Verificar se é um registro vazio (para deletar)
+      const isEmpty = receivingItems.every(item => item.status === 'pending') && 
+                     (!receivingNotes || receivingNotes.trim() === '');
+      
+      // Sempre ativar efeito de sucesso no início
+      setShowReceivingSuccessEffect(true);
+      setTimeout(() => {
+        setShowReceivingSuccessEffect(false);
+        setIsReceivingEditMode(false); // Sair do modo de edição após o sucesso
+      }, 2000);
+
+      if (existingReceiving) {
+        if (isEmpty) {
+          // Deletar registro vazio
+          await OrderReceiving.delete(existingReceiving.id);
+          toast({ 
+            description: "Registro de recebimento vazio foi removido.",
+            className: "border-blue-200 bg-blue-50 text-blue-800"
+          });
+          setExistingReceiving(null);
+        } else {
+          // Atualizar registro existente
+          await OrderReceiving.update(existingReceiving.id, {
+            items: receivingItems,
+            general_notes: receivingNotes
+          });
+          toast({ 
+            description: "Recebimento atualizado com sucesso!",
+            className: "border-green-200 bg-green-50 text-green-800"
+          });
+        }
+      } else {
+        if (!isEmpty) {
+          // Criar novo registro
+          const newReceiving = await OrderReceiving.create({
+            customer_id: customer.id,
+            customer_name: customer.name,
+            week_number: weekNumber,
+            year: year,
+            day_of_week: selectedDay,
+            date: format(addDays(weekStart, selectedDay - 1), "yyyy-MM-dd"),
+            items: receivingItems,
+            general_notes: receivingNotes
+          });
+          setExistingReceiving(newReceiving);
+          toast({ 
+            description: "Recebimento registrado com sucesso!",
+            className: "border-green-200 bg-green-50 text-green-800"
+          });
+        } else {
+          toast({ 
+            description: "Nenhum recebimento para registrar.",
+            className: "border-gray-200 bg-gray-50 text-gray-800"
+          });
+        }
+      }
+    } catch (error) {
+      toast({ 
+        variant: "destructive", 
+        title: "Erro ao Salvar Recebimento", 
+        description: error.message 
+      });
+    }
+  }, [customer, receivingItems, receivingNotes, existingReceiving, weekNumber, year, selectedDay, weekStart, toast]);
 
   const updateWasteItem = useCallback((index, field, value) => {
     setWasteItems(prevItems => {
-      const updatedItems = prevItems.map((item, i) => {
-        if (i === index) {
-          let processedValue = value;
-          if (field === 'internal_waste_quantity' || field === 'client_returned_quantity') {
-            processedValue = validateNumericOnCommit(value, 0);
-          } else if (field === 'payment_percentage') {
-            processedValue = Math.max(0, Math.min(100, parseInt(value) || 0));
-          }
-          return { ...item, [field]: processedValue };
-        }
-        return item;
-      });
+      const updatedItems = [...prevItems];
+      const item = { ...updatedItems[index] };
       
-      // Recalcular valores
-      const recalculated = calculateWasteTotalsAndDiscount(updatedItems);
-      return recalculated.items_with_final_value_for_ui;
+      if (field === 'internal_waste_quantity' || field === 'client_returned_quantity') {
+        item[field] = Math.max(0, parseFloat(value) || 0);
+      } else {
+        item[field] = value;
+      }
+      
+      updatedItems[index] = item;
+      return updatedItems;
     });
   }, []);
 
@@ -203,17 +520,18 @@ const MobileOrdersPage = ({ customerId }) => {
     if (!customer || wasteItems.length === 0) return;
 
     try {
-      // Calcular dados finais
-      const calculatedData = calculateWasteTotalsAndDiscount(wasteItems);
-      
       // Verificar se é um registro vazio (para deletar)
-      const isEmpty = (
-        !calculatedData.items_payload ||
-        calculatedData.items_payload.every(item => 
-          (item.internal_waste_quantity || 0) === 0 && 
-          (item.client_returned_quantity || 0) === 0
-        )
+      const isEmpty = wasteItems.every(item => 
+        (item.internal_waste_quantity || 0) === 0 && 
+        (item.client_returned_quantity || 0) === 0
       ) && (!wasteNotes || wasteNotes.trim() === '');
+
+      // Sempre ativar efeito de sucesso no início
+      setShowWasteSuccessEffect(true);
+      setTimeout(() => {
+        setShowWasteSuccessEffect(false);
+        setIsWasteEditMode(false); // Sair do modo de edição após o sucesso
+      }, 2000);
 
       if (existingWaste) {
         if (isEmpty) {
@@ -227,14 +545,8 @@ const MobileOrdersPage = ({ customerId }) => {
         } else {
           // Atualizar registro existente
           await OrderWaste.update(existingWaste.id, {
-            items: calculatedData.items_payload,
-            general_notes: wasteNotes,
-            total_internal_waste_weight_kg: calculatedData.total_internal_waste_weight_kg,
-            total_client_returned_weight_kg: calculatedData.total_client_returned_weight_kg,
-            total_combined_waste_weight_kg: calculatedData.total_combined_waste_weight_kg,
-            total_original_value_of_waste: calculatedData.total_original_value_of_waste,
-            total_discount_value_applied: calculatedData.total_discount_value_applied,
-            final_value_after_discount: calculatedData.final_value_after_discount,
+            items: wasteItems,
+            general_notes: wasteNotes
           });
           toast({ 
             description: "Sobras atualizadas com sucesso!",
@@ -251,14 +563,8 @@ const MobileOrdersPage = ({ customerId }) => {
             year: year,
             day_of_week: selectedDay,
             date: format(addDays(weekStart, selectedDay - 1), "yyyy-MM-dd"),
-            items: calculatedData.items_payload,
-            general_notes: wasteNotes,
-            total_internal_waste_weight_kg: calculatedData.total_internal_waste_weight_kg,
-            total_client_returned_weight_kg: calculatedData.total_client_returned_weight_kg,
-            total_combined_waste_weight_kg: calculatedData.total_combined_waste_weight_kg,
-            total_original_value_of_waste: calculatedData.total_original_value_of_waste,
-            total_discount_value_applied: calculatedData.total_discount_value_applied,
-            final_value_after_discount: calculatedData.final_value_after_discount,
+            items: wasteItems,
+            general_notes: wasteNotes
           });
           setExistingWaste(newWaste);
           toast({ 
@@ -273,7 +579,6 @@ const MobileOrdersPage = ({ customerId }) => {
         }
       }
     } catch (error) {
-      console.error("Erro ao salvar sobras:", error);
       toast({ 
         variant: "destructive", 
         title: "Erro ao Salvar Sobras", 
@@ -285,27 +590,45 @@ const MobileOrdersPage = ({ customerId }) => {
   // Carregamento inicial
   useEffect(() => {
     const loadInitialData = async () => {
+      if (!customerId) {
+        return;
+      }
+
       try {
         setLoading(true);
         
         // Carregar cliente
         const customerData = await Customer.getById(customerId);
         setCustomer(customerData);
-        
+
         // Carregar receitas
         const recipesData = await Recipe.list();
         setRecipes(recipesData);
-        
+
         // Carregar cardápios da semana
-        const menusData = await WeeklyMenu.query([
+        const allMenus = await WeeklyMenu.list();
+        
+        // Tentar buscar por week_number primeiro, depois por week_key
+        let menusData = await WeeklyMenu.query([
           { field: 'week_number', operator: '==', value: weekNumber },
           { field: 'year', operator: '==', value: year }
         ]);
-        setWeeklyMenus(menusData);
         
+        if (menusData.length === 0) {
+          const weekKey = `${year}-W${weekNumber.toString().padStart(2, '0')}`;
+          menusData = await WeeklyMenu.query([
+            { field: 'week_key', operator: '==', value: weekKey }
+          ]);
+        }
+        
+        setWeeklyMenus(menusData);
+
       } catch (error) {
-        console.error("Erro ao carregar dados:", error);
-        toast({ variant: "destructive", description: "Erro ao carregar dados iniciais." });
+        toast({ 
+          variant: "destructive", 
+          title: "Erro no Carregamento", 
+          description: "Falha ao carregar dados iniciais" 
+        });
       } finally {
         setLoading(false);
       }
@@ -318,110 +641,179 @@ const MobileOrdersPage = ({ customerId }) => {
 
   // Preparar itens do pedido baseado no cardápio
   const orderItems = useMemo(() => {
-    if (!weeklyMenus.length || !recipes.length || !customer) return [];
-    
+    if (!weeklyMenus.length || !recipes.length || !customer) {
+      return [];
+    }
+
     const menu = weeklyMenus[0];
-    if (!menu?.menu_data?.[selectedDay]) return [];
+    const menuData = menu?.menu_data?.[selectedDay];
     
+    if (!menuData) {
+      return [];
+    }
+
     const items = [];
-    const menuData = menu.menu_data[selectedDay];
-    
-    Object.entries(menuData || {}).forEach(([categoryId, categoryItems]) => {
-      if (!Array.isArray(categoryItems)) return;
+    let uniqueCounter = 0;
+    Object.entries(menuData).forEach(([categoryId, categoryData]) => {
+      // Verificar se categoryData é um array direto (estrutura do Firebase mostrada)
+      const itemsArray = Array.isArray(categoryData) ? categoryData : categoryData.items;
       
-      categoryItems.forEach(item => {
-        if (!item.recipe_id) return;
-        
-        // Verificar se o item é para este cliente
-        const itemLocations = item.locations;
-        const shouldInclude = !itemLocations || 
-          itemLocations.length === 0 || 
-          (Array.isArray(itemLocations) && itemLocations.includes(customer.id));
-        
-        if (shouldInclude) {
-          const recipe = recipes.find(r => r.id === item.recipe_id && r.active !== false);
-          if (!recipe) return;
-          
-          const defaultUnitType = recipe.cuba_weight && recipe.cuba_weight > 0 ? "cuba" : "kg";
-          let unitPrice;
-          
-          if (defaultUnitType === "cuba") {
-            unitPrice = (recipe.cost_per_kg_yield || 0) * (utilParseQuantity(recipe.cuba_weight) || 0);
-          } else {
-            unitPrice = recipe.cost_per_kg_yield || 0;
+      if (itemsArray && Array.isArray(itemsArray)) {
+        itemsArray.forEach((item) => {
+          // Verificar se deve incluir este item baseado em locations
+          const itemLocations = item.locations;
+          const shouldInclude = !itemLocations || itemLocations.length === 0 || 
+                               itemLocations.includes(customer.id);
+
+          if (shouldInclude) {
+            const recipe = recipes.find(r => r.id === item.recipe_id && r.active !== false);
+            
+            if (recipe) {
+              // Buscar container_type na estrutura correta
+              let containerType = "cuba"; // default
+              if (recipe.preparations && recipe.preparations.length > 0) {
+                const lastPrep = recipe.preparations[recipe.preparations.length - 1];
+                if (lastPrep.assembly_config?.container_type) {
+                  containerType = lastPrep.assembly_config.container_type.toLowerCase();
+                }
+              }
+              
+              // Se não encontrou, verificar se tem direto na receita
+              if (!containerType || containerType === "cuba") {
+                if (recipe.container_type) {
+                  containerType = recipe.container_type.toLowerCase();
+                }
+              }
+              
+              // Definir preço baseado no container_type
+              let unitPrice = 0;
+              if (containerType === "cuba") {
+                unitPrice = recipe.cuba_cost || recipe.portion_cost || recipe.cost_per_kg_yield || 0;
+              } else if (containerType === "kg") {
+                unitPrice = recipe.cost_per_kg_yield || recipe.portion_cost || recipe.cuba_cost || 0;
+              } else {
+                // Para outros tipos, tentar campo específico (ex: "unid._cost")
+                const specificField = `${containerType}_cost`;
+                if (recipe[specificField] && typeof recipe[specificField] === 'number') {
+                  unitPrice = recipe[specificField];
+                } else {
+                  // Fallback para portion_cost, cuba_cost, ou cost_per_kg_yield
+                  unitPrice = recipe.portion_cost || recipe.cuba_cost || recipe.cost_per_kg_yield || 0;
+                }
+              }
+              
+              const newItem = {
+                unique_id: `${item.recipe_id}_${uniqueCounter++}`,
+                recipe_id: item.recipe_id,
+                recipe_name: recipe.name,
+                category: recipe.category || categoryId,
+                unit_type: containerType,
+                base_quantity: 0, // Quantidade original sem %
+                quantity: 0, // Quantidade total com % aplicado
+                unit_price: unitPrice,
+                total_price: 0,
+                notes: "",
+                cuba_weight: utilParseQuantity(recipe.cuba_weight) || 0,
+                adjustment_percentage: 0
+              };
+              
+              items.push(newItem);
+            }
           }
-          
-          items.push({
-            recipe_id: item.recipe_id,
-            recipe_name: recipe.name,
-            category: recipe.category || categoryId,
-            unit_type: defaultUnitType,
-            quantity: 0,
-            unit_price: unitPrice,
-            total_price: 0,
-            notes: "",
-            cuba_weight: utilParseQuantity(recipe.cuba_weight) || 0,
-            adjustment_percentage: 0
-          });
-        }
-      });
+        });
+      }
     });
     
     return items;
   }, [weeklyMenus, recipes, customer, selectedDay]);
 
-  // Atualizar item do pedido
-  const updateOrderItem = useCallback((index, field, value) => {
+  const updateOrderItem = useCallback((uniqueId, field, value) => {
+    console.log('[updateOrderItem] Recebido:', { uniqueId, field, value });
     setCurrentOrder(prev => {
       if (!prev?.items) return prev;
-      
-      const newItems = [...prev.items];
-      const item = { ...newItems[index] };
-      
-      if (field === 'quantity') {
-        const quantity = utilParseQuantity(value);
-        item.quantity = quantity;
-        item.total_price = quantity * (item.unit_price || 0);
-      } else if (field === 'adjustment_percentage') {
-        const percentage = utilParseQuantity(value);
-        item.adjustment_percentage = percentage;
-        // Recalcular quantidade baseada na porcentagem
-        const baseQuantity = item.base_quantity || item.quantity;
-        const newQuantity = baseQuantity * (1 + (percentage / 100));
-        item.quantity = Math.max(0, newQuantity);
-        item.total_price = item.quantity * (item.unit_price || 0);
-      } else if (field === 'unit_type') {
-        item.unit_type = value;
-        // Recalcular preço unitário se mudou o tipo
-        const recipe = recipes.find(r => r.id === item.recipe_id);
-        if (recipe) {
-          if (value === "cuba") {
-            item.unit_price = (recipe.cost_per_kg_yield || 0) * (utilParseQuantity(recipe.cuba_weight) || 0);
+
+      const newItems = prev.items.map(item => {
+        if (item.unique_id === uniqueId) {
+          const updatedItem = { ...item };
+
+          if (field === 'base_quantity') {
+            console.log('[updateOrderItem] Processando base_quantity:', value);
+            const baseQuantity = utilParseQuantity(value);
+            console.log('[updateOrderItem] base_quantity após parse:', baseQuantity);
+            updatedItem.base_quantity = baseQuantity;
+            const percentage = updatedItem.adjustment_percentage || 0;
+            const newQuantity = baseQuantity * (1 + (percentage / 100));
+            updatedItem.quantity = Math.round(newQuantity * 100) / 100;
+            updatedItem.total_price = updatedItem.quantity * (updatedItem.unit_price || 0);
+          } else if (field === 'adjustment_percentage') {
+            console.log('[updateOrderItem] Processando adjustment_percentage:', value);
+            const percentage = utilParseQuantity(value);
+            console.log('[updateOrderItem] adjustment_percentage após parse:', percentage);
+            updatedItem.adjustment_percentage = percentage;
+            const baseQuantity = updatedItem.base_quantity || 0;
+            const newQuantity = baseQuantity * (1 + (percentage / 100));
+            updatedItem.quantity = Math.round(newQuantity * 100) / 100;
+            updatedItem.total_price = updatedItem.quantity * (updatedItem.unit_price || 0);
           } else {
-            item.unit_price = recipe.cost_per_kg_yield || 0;
+            updatedItem[field] = value;
           }
-          item.total_price = item.quantity * item.unit_price;
+          return updatedItem;
         }
-      } else {
-        item[field] = value;
-      }
-      
-      newItems[index] = item;
+        return item;
+      });
+
       return { ...prev, items: newItems };
     });
-  }, [recipes]);
+  }, []);
 
-  // Carregar dados de sobras quando a aba waste for selecionada
+  // Carregar dados de sobras quando a aba waste for selecionada ou quando pedidos mudarem
   useEffect(() => {
     if (activeTab === "waste" && customer && weeklyMenus.length && recipes.length) {
       loadWasteData();
     }
-  }, [activeTab, customer, selectedDay, weeklyMenus, recipes, loadWasteData]);
+  }, [activeTab, customer, selectedDay, weeklyMenus, recipes, existingOrders, loadWasteData]);
+
+  // Carregar dados de recebimento quando a aba receive for selecionada ou quando pedidos mudarem
+  useEffect(() => {
+    if (activeTab === "receive" && customer && weeklyMenus.length && recipes.length) {
+      loadReceivingData();
+    }
+  }, [activeTab, customer, selectedDay, weeklyMenus, recipes, existingOrders, loadReceivingData]);
+
+  // Resetar pedido quando mudar de dia
+  useEffect(() => {
+    // Só executar se já temos dados carregados
+    if (currentOrder && currentOrder.day_of_week !== selectedDay && Object.keys(existingOrders).length > 0) {
+      setCurrentOrder(null);
+      
+      // Verificar se existe pedido salvo para este dia
+      const existingOrder = existingOrders[selectedDay];
+      if (existingOrder) {
+        setCurrentOrder(existingOrder);
+        setMealsExpected(existingOrder.total_meals_expected || 0);
+        setGeneralNotes(existingOrder.general_notes || "");
+        setIsEditMode(false); // Se existe pedido salvo, não está em modo de edição
+      } else {
+        setMealsExpected(0);
+        setGeneralNotes("");
+        setIsEditMode(true); // Se não existe pedido, está em modo de edição
+      }
+      // Reset do efeito de sucesso ao trocar de dia
+      setShowSuccessEffect(false);
+      setShowReceivingSuccessEffect(false);
+      setShowWasteSuccessEffect(false);
+      
+      // Reset dos modos de edição - serão definidos quando os dados carregarem
+      setIsReceivingEditMode(true);
+      setIsWasteEditMode(true);
+    }
+  }, [selectedDay, currentOrder, existingOrders]);
 
   // Inicializar pedido quando itens mudam
   useEffect(() => {
-    if (orderItems.length > 0 && !currentOrder) {
-      setCurrentOrder({
+    // Só criar novo pedido se não existe um pedido salvo para este dia
+    if (orderItems.length > 0 && !currentOrder && !existingOrders[selectedDay]) {
+      const newOrder = {
         customer_id: customer?.id,
         customer_name: customer?.name,
         day_of_week: selectedDay,
@@ -431,504 +823,388 @@ const MobileOrdersPage = ({ customerId }) => {
         total_meals_expected: mealsExpected,
         general_notes: generalNotes,
         items: orderItems
+      };
+      setCurrentOrder(newOrder);
+    } else if (existingOrders[selectedDay] && !currentOrder && orderItems.length > 0) {
+      // Se existe pedido salvo mas currentOrder não foi definido, definir agora
+      const existingOrder = existingOrders[selectedDay];
+      
+      // Atualizar preços dos itens existentes com valores atuais das receitas
+      const updatedItems = existingOrder.items.map(existingItem => {
+        // Encontrar item correspondente nos orderItems atualizados (com preços novos)
+        const currentItem = orderItems.find(oi => oi.unique_id === existingItem.unique_id || oi.recipe_id === existingItem.recipe_id);
+        if (currentItem) {
+          // Manter quantidades e notas do pedido salvo, mas atualizar preços
+          return {
+            ...existingItem,
+            unit_price: currentItem.unit_price,
+            total_price: (existingItem.quantity || 0) * (currentItem.unit_price || 0)
+          };
+        }
+        return existingItem;
       });
+      
+      const updatedOrder = {
+        ...existingOrder,
+        items: updatedItems
+      };
+      
+      setCurrentOrder(updatedOrder);
+      setMealsExpected(existingOrder.total_meals_expected || 0);
+      setGeneralNotes(existingOrder.general_notes || "");
+      setIsEditMode(false);
     }
-  }, [orderItems, customer, selectedDay, weekNumber, year, weekStart, mealsExpected, generalNotes, currentOrder]);
+  }, [orderItems, customer, selectedDay, weekNumber, year, weekStart, mealsExpected, generalNotes, currentOrder, existingOrders]);
 
-  // Calcular totais
+  // Calcular totais e depreciação por devoluções
   const orderTotals = useMemo(() => {
-    if (!currentOrder?.items) return { totalItems: 0, totalAmount: 0 };
+    if (!currentOrder?.items) return { 
+      totalItems: 0, 
+      totalAmount: 0, 
+      depreciation: null,
+      finalAmount: 0
+    };
     
     const totalItems = currentOrder.items.reduce((sum, item) => sum + (item.quantity || 0), 0);
     const totalAmount = currentOrder.items.reduce((sum, item) => sum + (item.total_price || 0), 0);
     
-    return { totalItems, totalAmount };
-  }, [currentOrder]);
+    // Calcular depreciação baseada nos itens devolvidos (wasteItems)
+    const depreciationData = calculateTotalDepreciation(wasteItems || [], currentOrder.items || []);
+    const finalOrderValue = calculateFinalOrderValue(totalAmount, depreciationData.totalDepreciation);
+    
+    
+    return { 
+      totalItems, 
+      totalAmount,
+      depreciation: depreciationData,
+      finalAmount: finalOrderValue.finalTotal,
+      originalAmount: totalAmount,
+      depreciationAmount: depreciationData.totalDepreciation
+    };
+  }, [currentOrder, wasteItems]);
 
-  // Enviar pedido
-  const handleSubmitOrder = async () => {
-    if (!currentOrder || !customer) {
-      toast({ variant: "destructive", description: "Dados do pedido incompletos." });
-      return;
-    }
+  const submitOrder = useCallback(async () => {
+    if (!currentOrder || !customer) return;
 
     try {
+      // Criar strings dos inputs e outputs da aba pedidos
+      const createOrderStrings = () => {
+        let inputString = "=== INPUTS DA ABA PEDIDOS ===\n\n";
+        let outputString = "=== OUTPUTS DA ABA PEDIDOS ===\n\n";
+        
+        // Header das refeições esperadas
+        inputString += `Refeições Esperadas: ${mealsExpected || 0}\n\n`;
+        outputString += `Refeições Esperadas: ${mealsExpected || 0}\n\n`;
+        
+        // Agrupar itens por categoria
+        const groupedItems = groupItemsByCategory(currentOrder.items || [], (item) => item.category);
+        const orderedCategories = getOrderedCategories(groupedItems);
+        
+        // Para cada categoria
+        orderedCategories.forEach(({ name: categoryName, data: categoryData }) => {
+          const isCarneCategory = categoryName.toLowerCase().includes('carne');
+          
+          inputString += `--- CATEGORIA: ${categoryName} ---\n`;
+          outputString += `--- CATEGORIA: ${categoryName} ---\n`;
+          
+          if (isCarneCategory) {
+            inputString += "Item | Quantidade | Unidade | Porcionamento | Total Pedido | Subtotal | Observações\n";
+            outputString += "Item | Quantidade | Unidade | Porcionamento | Total Pedido | Subtotal | Observações\n";
+          } else {
+            inputString += "Item | Quantidade | Unidade | Subtotal | Observações\n";
+            outputString += "Item | Quantidade | Unidade | Subtotal | Observações\n";
+          }
+          
+          categoryData.items.forEach(item => {
+            const unitType = item.unit_type?.charAt(0).toUpperCase() + item.unit_type?.slice(1) || '';
+            const unitPrice = utilFormatCurrency(item.unit_price || 0);
+            const baseQty = utilFormattedQuantity(item.base_quantity || 0);
+            const totalQty = utilFormattedQuantity(item.quantity || 0);
+            const subtotal = utilFormatCurrency(item.total_price || 0);
+            const notes = item.notes || '';
+            const adjustmentPct = item.adjustment_percentage || 0;
+            
+            const itemHeader = `${item.recipe_name}\n${unitPrice}/${item.unit_type}`;
+            
+            if (isCarneCategory) {
+              inputString += `${itemHeader} | ${baseQty} | ${unitType} | ${adjustmentPct}% | ${totalQty} ${item.unit_type} | ${subtotal} | ${notes}\n`;
+              outputString += `${itemHeader} | ${baseQty} | ${unitType} | ${adjustmentPct}% | ${totalQty} ${item.unit_type} | ${subtotal} | ${notes}\n`;
+            } else {
+              inputString += `${itemHeader} | ${baseQty} | ${unitType} | ${subtotal} | ${notes}\n`;
+              outputString += `${itemHeader} | ${baseQty} | ${unitType} | ${subtotal} | ${notes}\n`;
+            }
+          });
+          
+          inputString += "\n";
+          outputString += "\n";
+        });
+        
+        // Totais
+        const totalItemsStr = utilFormattedQuantity(orderTotals.totalItems);
+        const totalAmountStr = utilFormatCurrency(orderTotals.totalAmount);
+        
+        inputString += `--- RESUMO DO PEDIDO ---\n`;
+        inputString += `Total de Itens: ${totalItemsStr}\n`;
+        inputString += `Valor Total: ${totalAmountStr}\n`;
+        inputString += `Observações Gerais: ${generalNotes || ''}\n`;
+        
+        outputString += `--- RESUMO DO PEDIDO ---\n`;
+        outputString += `Total de Itens: ${totalItemsStr}\n`;
+        outputString += `Valor Total: ${totalAmountStr}\n`;
+        outputString += `Observações Gerais: ${generalNotes || ''}\n`;
+        
+        return { inputString, outputString };
+      };
+      
+      const { inputString, outputString } = createOrderStrings();
+      
+
       const orderData = {
         ...currentOrder,
         total_meals_expected: mealsExpected,
         general_notes: generalNotes,
-        status: 'submitted'
+        total_items: orderTotals.totalItems,
+        total_amount: orderTotals.totalAmount,
+        final_amount: orderTotals.finalAmount,
+        original_amount: orderTotals.originalAmount,
+        depreciation_amount: orderTotals.depreciationAmount,
+        // Adicionar as strings dos inputs e outputs
+        order_inputs_string: inputString,
+        order_outputs_string: outputString,
+        form_data_snapshot: {
+          timestamp: new Date().toISOString(),
+          customer_name: customer.name,
+          day_of_week: selectedDay,
+          week_number: weekNumber,
+          year: year,
+          inputs: inputString,
+          outputs: outputString
+        }
       };
 
-      await Order.create(orderData);
-      toast({ description: "Pedido enviado com sucesso!" });
+      if (existingOrders[selectedDay]) {
+        await Order.update(existingOrders[selectedDay].id, orderData);
+        toast({ description: "Pedido atualizado com sucesso!" });
+      } else {
+        const newOrder = await Order.create(orderData);
+        setExistingOrders(prev => ({
+          ...prev,
+          [selectedDay]: newOrder
+        }));
+        toast({ description: "Pedido enviado com sucesso!" });
+      }
       
-      // Reset form
-      setCurrentOrder(null);
-      setMealsExpected(0);
-      setGeneralNotes("");
+      // Recarregar dados existentes para sincronizar as abas
+      await loadExistingOrders();
+      
+      // Ativar efeito de sucesso e depois sair do modo de edição
+      setShowSuccessEffect(true);
+      setTimeout(() => {
+        setShowSuccessEffect(false);
+        setIsEditMode(false);
+      }, 2000); // 2 segundos de efeito
       
     } catch (error) {
-      console.error("Erro ao enviar pedido:", error);
-      toast({ variant: "destructive", description: "Erro ao enviar pedido." });
+      toast({ variant: "destructive", description: "Erro ao enviar pedido. Tente novamente." });
     }
-  };
+  }, [currentOrder, customer, mealsExpected, generalNotes, orderTotals, existingOrders, selectedDay, toast]);
 
-  // Navegação de semana
-  const changeWeek = (direction) => {
-    const newDate = addDays(currentDate, direction * 7);
-    setCurrentDate(newDate);
-  };
+  const enableEditMode = useCallback(() => {
+    setIsEditMode(true);
+  }, []);
 
-  if (loading) {
+  const enableReceivingEditMode = useCallback(() => {
+    setIsReceivingEditMode(true);
+  }, []);
+
+  const enableWasteEditMode = useCallback(() => {
+    setIsWasteEditMode(true);
+  }, []);
+
+  // Carregar pedidos existentes quando customer muda
+  useEffect(() => {
+    if (customer) {
+      loadExistingOrders();
+    }
+  }, [customer, loadExistingOrders]);
+
+  if (!customerId) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 flex items-center justify-center">
-        <div className="text-center">
-          <ChefHat className="w-12 h-12 mx-auto mb-4 text-blue-600 animate-pulse" />
-          <p className="text-gray-600">Carregando...</p>
-        </div>
+      <div className="p-8 text-center">
+        <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-yellow-500" />
+        <h3 className="text-lg font-semibold text-gray-700 mb-2">ID do Cliente Requerido</h3>
+        <p className="text-gray-500">Por favor, forneça um ID de cliente válido.</p>
       </div>
     );
   }
 
-  if (!customer) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 flex items-center justify-center">
-        <div className="text-center text-red-600">
-          <p>Cliente não encontrado</p>
-        </div>
+      <div className="p-8 text-center">
+        <Loader2 className="w-8 h-8 mx-auto mb-4 text-blue-500 animate-spin" />
+        <p className="text-gray-600">Carregando dados...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white border-b shadow-sm sticky top-0 z-50">
-        <div className="flex items-center justify-between p-4">
-          <div className="flex items-center gap-3">
-            <ChefHat className="w-6 h-6 text-blue-600" />
-            <div>
-              <h1 className="text-lg font-semibold text-gray-900">Fazer Pedido</h1>
-              <p className="text-sm text-gray-500">{customer.name}</p>
+      <div className="bg-white shadow-sm border-b">
+        <div className="p-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <ChefHat className="w-6 h-6 text-blue-600" />
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">Portal do Cliente</h1>
+                <p className="text-sm text-gray-600">{customer?.name}</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-sm font-medium text-gray-700">
+                Semana {weekNumber}/{year}
+              </p>
+              <p className="text-xs text-gray-500">
+                {format(weekStart, "dd/MM")} - {format(addDays(weekStart, 6), "dd/MM/yyyy")}
+              </p>
             </div>
           </div>
-          
-          <div className="flex items-center gap-2">
-            <Settings className="w-5 h-5 text-gray-400" />
-            <Badge variant="outline" className="text-xs">
-              Rascunho
-            </Badge>
-            <Badge variant="secondary" className="text-xs">
-              Semana {weekNumber}/{year}
-            </Badge>
-          </div>
-        </div>
-        
-        {/* Week Navigation */}
-        <div className="flex items-center justify-between px-4 py-2 bg-gray-50">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => changeWeek(-1)}
-            className="p-2"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </Button>
-          
-          <div className="text-sm font-medium text-center">
-            {format(weekStart, 'dd/MM', { locale: ptBR })} - {format(addDays(weekStart, 4), 'dd/MM', { locale: ptBR })}
-          </div>
-          
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => changeWeek(1)}
-            className="p-2"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </Button>
-        </div>
-        
-        {/* Day Selector */}
-        <div className="flex overflow-x-auto">
-          {weekDays.map((day) => (
-            <button
-              key={day.dayNumber}
-              onClick={() => setSelectedDay(day.dayNumber)}
-              className={cn(
-                "flex flex-col items-center py-3 px-4 border-b-2 whitespace-nowrap min-w-[80px]",
-                selectedDay === day.dayNumber
-                  ? "border-blue-600 text-blue-600 font-medium bg-blue-50"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              )}
-            >
-              <span className="text-xs">{day.shortDayName}</span>
-              <span className="text-xs mt-0.5">{day.formattedDate}</span>
-            </button>
-          ))}
-        </div>
-      </header>
 
-      {/* Tabs */}
-      <div className="bg-white border-b">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 bg-transparent">
-            <TabsTrigger value="orders" className="flex items-center gap-2">
-              <ShoppingCart className="w-4 h-4" />
-              Pedido
-            </TabsTrigger>
-            <TabsTrigger value="receive" className="flex items-center gap-2">
-              <Package className="w-4 h-4" />
-              Recebimento
-            </TabsTrigger>
-            <TabsTrigger value="waste" className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4" />
-              Sobras
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+          {/* Week Navigation */}
+          <div className="flex items-center justify-between mb-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentDate(addDays(currentDate, -7))}
+              className="flex items-center gap-2"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Semana Anterior
+            </Button>
+            <div className="flex gap-1">
+              {weekDays.map((day) => (
+                <Button
+                  key={day.dayNumber}
+                  variant={selectedDay === day.dayNumber ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSelectedDay(day.dayNumber)}
+                  className={cn(
+                    "flex flex-col h-16 w-16 p-1 text-xs",
+                    selectedDay === day.dayNumber && "bg-blue-600 text-white"
+                  )}
+                >
+                  <span className="font-medium">{day.dayShort}</span>
+                  <span className="text-xs opacity-80">{day.dayDate}</span>
+                </Button>
+              ))}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentDate(addDays(currentDate, 7))}
+              className="flex items-center gap-2"
+            >
+              Próxima Semana
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+
+          {/* Tabs */}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="orders" className="flex items-center gap-2">
+                <ShoppingCart className="w-4 h-4" />
+                Pedido
+              </TabsTrigger>
+              <TabsTrigger value="receive" className="flex items-center gap-2">
+                <Package className="w-4 h-4" />
+                Recebimento
+              </TabsTrigger>
+              <TabsTrigger value="waste" className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" />
+                Sobras
+              </TabsTrigger>
+              <TabsTrigger value="history" className="flex items-center gap-2">
+                <CircleDollarSign className="w-4 h-4" />
+                Histórico
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
       </div>
 
       {/* Content */}
       <div className="p-4 space-y-4">
         {activeTab === "orders" && (
-          <>
-            {/* Meals Expected */}
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <Utensils className="w-5 h-5 text-blue-600" />
-                  <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Número de Refeições Esperadas
-                    </label>
-                    <Input
-                      type="number"
-                      value={mealsExpected}
-                      onChange={(e) => setMealsExpected(parseInt(e.target.value) || 0)}
-                      className="w-20"
-                      min="0"
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Tabela de Pedidos por Categoria */}
-            <div className="space-y-3">
-              {getOrderedCategories(
-                groupItemsByCategory(currentOrder?.items || [], (item) => item.category)
-              ).map(({ name: categoryName, data: categoryData }) => {
-                console.log('🎨 [MobileOrdersPage - Pedidos] Renderizando categoria:', categoryName);
-                console.log('🎨 [MobileOrdersPage - Pedidos] Dados da categoria:', categoryData.categoryInfo);
-                const { headerStyle } = generateCategoryStyles(categoryData.categoryInfo.color);
-                console.log('🎨 [MobileOrdersPage - Pedidos] Estilo gerado:', headerStyle);
-                return (
-                  <div key={categoryName} className="bg-white rounded-xl shadow-sm border border-gray-200/50 overflow-hidden hover:shadow-md transition-all duration-300">
-                    <div 
-                      className="py-4 px-6 relative border-b border-gray-100/50" 
-                      style={headerStyle}
-                    >
-                      <div className="flex items-center">
-                        <div 
-                          className="w-5 h-5 rounded-full mr-3 shadow-sm border-2 border-white/30 ring-2 ring-white/20" 
-                          style={{ backgroundColor: categoryData.categoryInfo.color }}
-                        />
-                        <h3 className="text-lg font-semibold text-gray-800">{categoryName}</h3>
-                      </div>
-                    </div>
-                    <div className="p-6 bg-gradient-to-b from-white to-gray-50/30">
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b border-blue-100 bg-blue-50">
-                              <th className="text-left p-2 text-xs font-medium text-blue-700">Item</th>
-                              <th className="text-center p-2 text-xs font-medium text-blue-700">Pedido</th>
-                              <th className="text-center p-2 text-xs font-medium text-blue-700">% Ajuste</th>
-                              <th className="text-center p-2 text-xs font-medium text-blue-700">Unidade</th>
-                              <th className="text-center p-2 text-xs font-medium text-blue-700">Qtd Final</th>
-                              <th className="text-center p-2 text-xs font-medium text-blue-700">Valor Total</th>
-                              <th className="text-left p-2 text-xs font-medium text-blue-700">Observações</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {categoryData.items.map((item, index) => {
-                              const globalIndex = currentOrder?.items?.findIndex(oi => oi.recipe_id === item.recipe_id) || 0;
-                              return (
-                                <tr key={`order-${categoryName}-${item.recipe_id}-${index}`} className="border-b border-blue-50">
-                                  <td className="p-2">
-                                    <div>
-                                      <p className="font-medium text-blue-900 text-xs">{item.recipe_name}</p>
-                                      <p className="text-xs text-blue-600">
-                                        {utilFormatCurrency(item.unit_price)}/{item.unit_type}
-                                      </p>
-                                    </div>
-                                  </td>
-                                  <td className="p-2">
-                                    <Input
-                                      type="text"
-                                      inputMode="decimal"
-                                      value={item.quantity || ''}
-                                      onChange={(e) => updateOrderItem(globalIndex, 'quantity', e.target.value)}
-                                      className="text-center text-xs h-8 w-16 border-blue-300 focus:border-blue-500"
-                                      placeholder="0"
-                                    />
-                                  </td>
-                                  <td className="p-2">
-                                    <Input
-                                      type="text"
-                                      inputMode="decimal"
-                                      value={item.adjustment_percentage || ''}
-                                      onChange={(e) => updateOrderItem(globalIndex, 'adjustment_percentage', e.target.value)}
-                                      className="text-center text-xs h-8 w-16 border-blue-300 focus:border-blue-500"
-                                      placeholder="0"
-                                    />
-                                  </td>
-                                  <td className="p-2">
-                                    <select
-                                      value={item.unit_type}
-                                      onChange={(e) => updateOrderItem(globalIndex, 'unit_type', e.target.value)}
-                                      className="text-xs h-8 w-16 border border-blue-300 rounded focus:border-blue-500"
-                                    >
-                                      <option value="kg">Kg</option>
-                                      {item.cuba_weight > 0 && (
-                                        <option value="cuba">Cuba</option>
-                                      )}
-                                    </select>
-                                  </td>
-                                  <td className="p-2">
-                                    <div className="text-center text-xs font-medium text-blue-700">
-                                      {utilFormattedQuantity(item.quantity)}
-                                    </div>
-                                  </td>
-                                  <td className="p-2">
-                                    <div className="text-center text-xs font-medium text-blue-700">
-                                      {utilFormatCurrency(item.total_price)}
-                                    </div>
-                                  </td>
-                                  <td className="p-2">
-                                    <Input
-                                      type="text"
-                                      value={item.notes || ''}
-                                      onChange={(e) => updateOrderItem(globalIndex, 'notes', e.target.value)}
-                                      className="text-xs h-8 border-blue-300 focus:border-blue-500"
-                                      placeholder="Observações..."
-                                    />
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* General Notes */}
-            <Card>
-              <CardContent className="p-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Observações Gerais
-                </label>
-                <Textarea
-                  value={generalNotes}
-                  onChange={(e) => setGeneralNotes(e.target.value)}
-                  placeholder="Observações gerais sobre o pedido..."
-                  className="min-h-[80px]"
-                  rows={3}
-                />
-              </CardContent>
-            </Card>
-          </>
+          <OrdersTab
+            currentOrder={currentOrder}
+            orderItems={orderItems}
+            orderTotals={orderTotals}
+            mealsExpected={mealsExpected}
+            setMealsExpected={setMealsExpected}
+            generalNotes={generalNotes}
+            setGeneralNotes={setGeneralNotes}
+            updateOrderItem={updateOrderItem}
+            submitOrder={submitOrder}
+            enableEditMode={enableEditMode}
+            isEditMode={isEditMode}
+            showSuccessEffect={showSuccessEffect}
+            existingOrder={existingOrders[selectedDay]}
+            wasteItems={wasteItems}
+            existingWaste={existingWaste}
+            groupItemsByCategory={groupItemsByCategory}
+            getOrderedCategories={getOrderedCategories}
+            generateCategoryStyles={generateCategoryStyles}
+          />
         )}
 
         {activeTab === "receive" && (
-          <Card>
-            <CardContent className="p-8 text-center">
-              <Package className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-              <p className="text-gray-500">Funcionalidade de recebimento em desenvolvimento</p>
-            </CardContent>
-          </Card>
+          <ReceivingTab
+            receivingLoading={receivingLoading}
+            existingOrders={existingOrders}
+            selectedDay={selectedDay}
+            receivingItems={receivingItems}
+            receivingNotes={receivingNotes}
+            setReceivingNotes={setReceivingNotes}
+            updateReceivingItem={updateReceivingItem}
+            markAllAsReceived={markAllAsReceived}
+            saveReceivingData={saveReceivingData}
+            showSuccessEffect={showReceivingSuccessEffect}
+            isEditMode={isReceivingEditMode}
+            enableEditMode={enableReceivingEditMode}
+            existingReceiving={existingReceiving}
+            groupItemsByCategory={groupItemsByCategory}
+            getOrderedCategories={getOrderedCategories}
+            generateCategoryStyles={generateCategoryStyles}
+          />
         )}
 
         {activeTab === "waste" && (
-          <div className="space-y-4">
-            {wasteLoading ? (
-              <Card>
-                <CardContent className="p-8 text-center">
-                  <Loader2 className="w-8 h-8 mx-auto mb-4 text-amber-500 animate-spin" />
-                  <p className="text-amber-600">Carregando dados de sobras...</p>
-                </CardContent>
-              </Card>
-            ) : wasteItems.length === 0 ? (
-              <Card>
-                <CardContent className="p-8 text-center">
-                  <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-amber-400" />
-                  <h3 className="font-semibold text-lg text-amber-700 mb-2">Nenhum Item para Sobras</h3>
-                  <p className="text-amber-600 text-sm">
-                    Não há itens de cardápio para registrar sobras neste dia.
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              <>
-                {/* Tabela de Sobras por Categoria */}
-                {getOrderedCategories(
-                  groupItemsByCategory(wasteItems, (item) => item.category)
-                ).map(({ name: categoryName, data: categoryData }) => {
-                  console.log('🎨 [MobileOrdersPage - Sobras] Renderizando categoria:', categoryName);
-                  console.log('🎨 [MobileOrdersPage - Sobras] Dados da categoria:', categoryData.categoryInfo);
-                  const { headerStyle } = generateCategoryStyles(categoryData.categoryInfo.color);
-                  console.log('🎨 [MobileOrdersPage - Sobras] Estilo gerado:', headerStyle);
-                  return (
-                    <div key={categoryName} className="bg-white rounded-xl shadow-sm border border-gray-200/50 overflow-hidden hover:shadow-md transition-all duration-300">
-                      <div 
-                        className="py-4 px-6 relative border-b border-gray-100/50" 
-                        style={headerStyle}
-                      >
-                        <div className="flex items-center">
-                          <div 
-                            className="w-5 h-5 rounded-full mr-3 shadow-sm border-2 border-white/30 ring-2 ring-white/20" 
-                            style={{ backgroundColor: categoryData.categoryInfo.color }}
-                          />
-                          <h3 className="text-lg font-semibold text-gray-800">{categoryName}</h3>
-                        </div>
-                      </div>
-                      <div className="p-6 bg-gradient-to-b from-white to-gray-50/30">
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b border-amber-100 bg-amber-50">
-                              <th className="text-left p-2 text-xs font-medium text-amber-700">Item</th>
-                              <th className="text-center p-2 text-xs font-medium text-amber-700">Sobra Cozinha</th>
-                              <th className="text-center p-2 text-xs font-medium text-amber-700">Sobra Cliente</th>
-                              <th className="text-center p-2 text-xs font-medium text-amber-700">% Pag.</th>
-                              <th className="text-center p-2 text-xs font-medium text-amber-700">Valor Final</th>
-                              <th className="text-left p-2 text-xs font-medium text-amber-700">Observações</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {categoryData.items.map((item, index) => {
-                              const globalIndex = wasteItems.findIndex(wi => wi.recipe_id === item.recipe_id);
-                              return (
-                                <tr key={`waste-${categoryName}-${item.recipe_id}-${index}`} className="border-b border-amber-50">
-                                  <td className="p-2">
-                                    <div>
-                                      <p className="font-medium text-amber-900 text-xs">{item.recipe_name}</p>
-                                      <p className="text-xs text-amber-600">
-                                        Pedido: {formatQuantityForDisplay(item.order_quantity)} {item.order_unit_type}
-                                      </p>
-                                    </div>
-                                  </td>
-                                  <td className="p-2">
-                                    <div className="flex gap-1 items-center justify-center">
-                                      <Input
-                                        type="text"
-                                        inputMode="decimal"
-                                        value={formatQuantityForDisplay(item.internal_waste_quantity)}
-                                        onChange={(e) => updateWasteItem(globalIndex, 'internal_waste_quantity', e.target.value)}
-                                        className="text-center text-xs h-8 w-12 border-amber-300 focus:border-amber-500"
-                                        placeholder="0"
-                                      />
-                                      <select
-                                        value={item.internal_waste_unit_type}
-                                        onChange={(e) => updateWasteItem(globalIndex, 'internal_waste_unit_type', e.target.value)}
-                                        className="text-xs h-8 w-12 border border-amber-300 rounded focus:border-amber-500"
-                                      >
-                                        <option value="kg">Kg</option>
-                                        <option value="cuba">Cuba</option>
-                                      </select>
-                                    </div>
-                                  </td>
-                                  <td className="p-2">
-                                    <div className="flex gap-1 items-center justify-center">
-                                      <Input
-                                        type="text"
-                                        inputMode="decimal"
-                                        value={formatQuantityForDisplay(item.client_returned_quantity)}
-                                        onChange={(e) => updateWasteItem(globalIndex, 'client_returned_quantity', e.target.value)}
-                                        className="text-center text-xs h-8 w-12 border-amber-300 focus:border-amber-500"
-                                        placeholder="0"
-                                      />
-                                      <select
-                                        value={item.client_returned_unit_type}
-                                        onChange={(e) => updateWasteItem(globalIndex, 'client_returned_unit_type', e.target.value)}
-                                        className="text-xs h-8 w-12 border border-amber-300 rounded focus:border-amber-500"
-                                      >
-                                        <option value="kg">Kg</option>
-                                        <option value="cuba">Cuba</option>
-                                      </select>
-                                    </div>
-                                  </td>
-                                  <td className="p-2">
-                                    <div className="flex items-center justify-center">
-                                      <Input
-                                        type="number"
-                                        value={item.payment_percentage}
-                                        onChange={(e) => updateWasteItem(globalIndex, 'payment_percentage', parseInt(e.target.value) || 0)}
-                                        className="text-center text-xs h-8 w-16 border-amber-300 focus:border-amber-500"
-                                        placeholder="100"
-                                        min="0"
-                                        max="100"
-                                      />
-                                    </div>
-                                  </td>
-                                  <td className="p-2">
-                                    <div className="text-center text-xs font-medium text-amber-700">
-                                      {formatCurrency(item.final_value_this_item || 0)}
-                                    </div>
-                                  </td>
-                                  <td className="p-2">
-                                    <Input
-                                      type="text"
-                                      value={item.notes || ''}
-                                      onChange={(e) => updateWasteItem(globalIndex, 'notes', e.target.value)}
-                                      className="text-xs h-8 border-amber-300 focus:border-amber-500"
-                                      placeholder="Observações..."
-                                    />
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                      </div>
-                    </div>
-                  );
-                })}
+          <WasteTab
+            wasteLoading={wasteLoading}
+            wasteItems={wasteItems}
+            wasteNotes={wasteNotes}
+            setWasteNotes={setWasteNotes}
+            updateWasteItem={updateWasteItem}
+            saveWasteData={saveWasteData}
+            showSuccessEffect={showWasteSuccessEffect}
+            isEditMode={isWasteEditMode}
+            enableEditMode={enableWasteEditMode}
+            existingWaste={existingWaste}
+            groupItemsByCategory={groupItemsByCategory}
+            getOrderedCategories={getOrderedCategories}
+            generateCategoryStyles={generateCategoryStyles}
+          />
+        )}
 
-                {/* Observações Gerais */}
-                <Card className="border-amber-200">
-                  <CardContent className="p-4">
-                    <label className="block text-sm font-medium text-amber-700 mb-2">
-                      Observações Gerais sobre Sobras
-                    </label>
-                    <Textarea
-                      value={wasteNotes}
-                      onChange={(e) => setWasteNotes(e.target.value)}
-                      placeholder="Observações gerais sobre as sobras do dia..."
-                      className="min-h-[80px] border-amber-300 focus:border-amber-500"
-                      rows={3}
-                    />
-                  </CardContent>
-                </Card>
-
-                {/* Botão de Salvar */}
-                <Button 
-                  onClick={saveWasteData}
-                  className="w-full bg-amber-600 hover:bg-amber-700 text-white"
-                >
-                  <Send className="w-4 h-4 mr-2" />
-                  Salvar Sobras
-                </Button>
-              </>
-            )}
-          </div>
+        {activeTab === "history" && (
+          <HistoryTab
+            existingOrders={existingOrders}
+            weekDays={weekDays}
+            year={year}
+            weekNumber={weekNumber}
+            customer={customer}
+          />
         )}
       </div>
 
@@ -938,22 +1214,52 @@ const MobileOrdersPage = ({ customerId }) => {
           <div className="p-4">
             <div className="flex justify-between items-center mb-3">
               <div className="text-sm text-gray-600">
-                <span className="font-medium">Total:</span> {utilFormatCurrency(orderTotals.totalAmount)}
+                {orderTotals.depreciationAmount > 0 ? (
+                  <div>
+                    <div><span className="font-medium">Original:</span> {utilFormatCurrency(orderTotals.originalAmount)}</div>
+                    <div className="text-red-600"><span className="font-medium">Devolução:</span> -{utilFormatCurrency(orderTotals.depreciationAmount)}</div>
+                    <div className="font-bold"><span className="font-medium">Final:</span> {utilFormatCurrency(orderTotals.finalAmount)}</div>
+                  </div>
+                ) : (
+                  <div><span className="font-medium">Total:</span> {utilFormatCurrency(orderTotals.totalAmount)}</div>
+                )}
               </div>
               <div className="text-sm text-gray-600">
-                <span className="font-medium">Itens:</span> {Math.round(orderTotals.totalItems * 10) / 10}
+                <span className="font-medium">Itens:</span> {utilFormattedQuantity(orderTotals.totalItems)}
               </div>
             </div>
-            
-            <Button 
-              onClick={handleSubmitOrder}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-              size="lg"
-              disabled={orderTotals.totalItems === 0}
-            >
-              <Send className="w-4 h-4 mr-2" />
-              Enviar Pedido
-            </Button>
+            {isEditMode || showSuccessEffect ? (
+              <Button 
+                onClick={submitOrder}
+                className={`w-full text-white transition-all duration-500 ${
+                  showSuccessEffect 
+                    ? 'bg-green-600 hover:bg-green-700 scale-105 shadow-lg' 
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+                disabled={orderTotals.totalItems === 0 || showSuccessEffect}
+              >
+                {showSuccessEffect ? (
+                  <>
+                    <CheckCircle className="w-4 h-4 mr-2 animate-bounce" />
+                    Pedido Enviado!
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4 mr-2" />
+                    {existingOrders[selectedDay] ? 'Atualizar Pedido' : 'Enviar Pedido'}
+                  </>
+                )}
+              </Button>
+            ) : (
+              <Button 
+                onClick={enableEditMode}
+                className="w-full bg-amber-600 hover:bg-amber-700 text-white"
+                disabled={orderTotals.totalItems === 0}
+              >
+                <Send className="w-4 h-4 mr-2" />
+                Editar Pedido
+              </Button>
+            )}
           </div>
         </div>
       )}

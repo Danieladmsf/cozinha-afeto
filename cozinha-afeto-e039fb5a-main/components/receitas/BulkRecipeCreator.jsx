@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { 
   Dialog, 
@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Recipe } from "@/app/api/entities";
+import { Recipe, CategoryTree } from "@/app/api/entities";
 import { useToast } from "@/components/ui/use-toast";
 import { 
   ChevronRight, 
@@ -20,10 +20,11 @@ import {
   FileText 
 } from "lucide-react";
 
-export default function BulkRecipeCreator({ categories, onSuccess }) {
+export default function BulkRecipeCreator({ onSuccess }) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [results, setResults] = useState(null);
+  const [subcategories, setSubcategories] = useState([]);
   const [formData, setFormData] = useState({
     category: "",
     recipeNames: "",
@@ -31,6 +32,40 @@ export default function BulkRecipeCreator({ categories, onSuccess }) {
     yieldWeight: "1000" // em gramas
   });
   const { toast } = useToast();
+
+  // Carregar subcategorias de receitas do CategoryTree
+  const loadSubcategories = async () => {
+    try {
+      const allCategories = await CategoryTree.list();
+      
+      
+      // Filtrar categorias de receitas (type === "receitas" e active)
+      const recipeCategories = allCategories
+        .filter(cat => cat.type === "receitas" && cat.active !== false)
+        .sort((a, b) => (a.order || 0) - (b.order || 0))
+        .map(cat => ({
+          value: cat.name,
+          label: cat.name,
+          id: cat.id
+        }));
+      
+      
+      setSubcategories(recipeCategories);
+    } catch (error) {
+      console.error("Erro ao carregar subcategorias:", error);
+      toast({
+        title: "Erro",
+        description: "Erro ao carregar categorias de receitas.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (isDialogOpen) {
+      loadSubcategories();
+    }
+  }, [isDialogOpen]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -171,12 +206,12 @@ export default function BulkRecipeCreator({ categories, onSuccess }) {
                     <SelectValue placeholder="Selecione a categoria" />
                   </SelectTrigger>
                   <SelectContent>
-                    {categories?.map((category) => (
+                    {subcategories?.map((subcategory) => (
                       <SelectItem 
-                        key={category.id || category.value} 
-                        value={category.value || category.name}
+                        key={subcategory.id} 
+                        value={subcategory.value}
                       >
-                        {category.label || category.name}
+                        {subcategory.label}
                       </SelectItem>
                     ))}
                   </SelectContent>

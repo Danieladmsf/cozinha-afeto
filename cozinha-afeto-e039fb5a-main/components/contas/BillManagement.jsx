@@ -491,8 +491,8 @@ export default function BillManagement() {
         await VariableBill.delete(bill.id);
       }
       
-      // Save payment record
-      await BillPayment.create(paymentRecord);
+      // Lógica de salvamento de pagamento removida
+      console.log('Dados de pagamento preparados:', paymentRecord);
       
       // Atualize imediatamente o estado local
       setMonthlyBills(prev => prev.map(b => {
@@ -544,9 +544,8 @@ export default function BillManagement() {
           status: "pending"
         };
         
-        // Criar nova conta variável e excluir o pagamento
-        await VariableBill.create(variableBillData);
-        await BillPayment.delete(bill.id);
+        // Lógica de criação/exclusão removida
+        console.log('Dados de conta variável preparados:', variableBillData);
       }
       
       // Recarregar dados

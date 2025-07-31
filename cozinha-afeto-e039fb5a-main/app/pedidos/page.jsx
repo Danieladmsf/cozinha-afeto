@@ -1,5 +1,5 @@
-import Orders from '@/components/pedidos/Orders';
+import CustomerOrderPortal from '@/components/clientes/CustomerOrderPortal';
 
-export default function OrdersPage() {
-  return <Orders />;
+export default function CustomerOrderPortalPage() {
+  return <CustomerOrderPortal />;
 }

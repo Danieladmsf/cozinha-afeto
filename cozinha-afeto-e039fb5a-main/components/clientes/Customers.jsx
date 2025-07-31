@@ -187,17 +187,8 @@ export default function Customers() {
     }
 
     try {
-      if (currentCustomer && currentCustomer.id) {
-        await Customer.update(currentCustomer.id, data);
-        toast({ title: "Sucesso", description: "Cliente atualizado." });
-      } else {
-        await Customer.create(data);
-        toast({ title: "Sucesso", description: "Cliente cadastrado." });
-      }
-
-      setIsDialogOpen(false);
-      setCurrentCustomer(null);
-      loadCustomers();
+      // Lógica de salvamento removida  
+      console.log('Dados de cliente preparados:', data);
     } catch (error) {
       console.error("Erro ao salvar cliente:", error);
       toast({

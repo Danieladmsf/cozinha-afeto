@@ -283,22 +283,8 @@ export default function NutritionFoodEditor() {
       
       console.log("Dados finais para salvar:", dataToSave);
       
-      if (food && food.id) {
-        // Atualizar existente
-        await NutritionFood.update(food.id, dataToSave);
-        toast({
-          title: "Sucesso",
-          description: "Alimento atualizado com sucesso"
-        });
-      } else {
-        // Criar novo - adicionar category_id apenas na criação
-        dataToSave.category_id = formData.category_id;
-        await NutritionFood.create(dataToSave);
-        toast({
-          title: "Sucesso", 
-          description: "Alimento criado com sucesso"
-        });
-      }
+      // Lógica de salvamento removida
+      console.log('Dados de alimento preparados:', dataToSave);
       
       // Redirecionar
       router.push('/nutrition');

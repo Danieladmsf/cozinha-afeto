@@ -91,6 +91,7 @@ const calculateCubaCost = (cubaWeightKg, costPerKgYield) => {
 };
 
 export default function Recipes() {
+  const [isClient, setIsClient] = useState(false);
   const [recipes, setRecipes] = useState([]);
   const [ingredients, setIngredients] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -128,6 +129,10 @@ export default function Recipes() {
     loadCategories();
     loadIngredients();
     loadPriceHistory();
+  }, []);
+
+  useEffect(() => {
+    setIsClient(true);
   }, []);
 
   useEffect(() => {
@@ -353,12 +358,27 @@ export default function Recipes() {
   };
 
   const handleDelete = async (recipe) => {
+    console.log("[Recipes] handleDelete called for recipe:", recipe);
+    
     if (window.confirm(`Tem certeza que deseja excluir a receita "${recipe.name}"?`)) {
       try {
+        console.log("[Recipes] Calling Recipe.delete for ID:", recipe.id);
         await Recipe.delete(recipe.id);
-        loadRecipes();
+        
+        console.log("[Recipes] Recipe deleted successfully, reloading recipes...");
+        await loadRecipes();
+        
+        toast({
+          title: "Receita excluída",
+          description: `A receita "${recipe.name}" foi excluída com sucesso.`,
+        });
       } catch (error) {
         console.error("Erro ao excluir receita:", error);
+        toast({
+          title: "Erro ao excluir",
+          description: `Erro ao excluir a receita "${recipe.name}": ${error.message}`,
+          variant: "destructive"
+        });
       }
     }
   };
@@ -797,7 +817,6 @@ export default function Recipes() {
               </div>
               <div className="flex gap-2">
                 <BulkRecipeCreator 
-                  categories={recipeCategories} 
                   onSuccess={loadRecipes} 
                 />
               </div>
@@ -1116,7 +1135,7 @@ export default function Recipes() {
                                           Última Atualização
                                         </div>
                                         <p className="text-sm font-medium text-gray-700">
-                                          {recipe.updated_date 
+                                          {recipe.updated_date && isClient
                                             ? format(new Date(recipe.updated_date), "dd/MM/yyyy")
                                             : "N/A"}
                                         </p>

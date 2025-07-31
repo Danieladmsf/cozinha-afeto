@@ -4,6 +4,7 @@ import {
   getDocs, 
   getDoc, 
   addDoc, 
+  setDoc,
   updateDoc, 
   deleteDoc, 
   query, 
@@ -11,7 +12,7 @@ import {
   orderBy, 
   limit 
 } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { db } from '../../lib/firebase.js';
 
 // Firebase Collection Helper
 const createEntity = (collectionName) => {
@@ -35,12 +36,47 @@ const createEntity = (collectionName) => {
     list: async () => {
       try {
         console.log(`[Firebase] Listing all documents from ${collectionName}...`);
+        console.log(`[Firebase] Database instance:`, db ? 'Connected' : 'Not connected');
+        console.log(`[Firebase] Collection path: ${collectionName}`);
+        
         const querySnapshot = await getDocs(collection(db, collectionName));
-        const docs = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        console.log(`[Firebase] Query executed successfully for ${collectionName}`);
+        console.log(`[Firebase] QuerySnapshot empty:`, querySnapshot.empty);
+        console.log(`[Firebase] QuerySnapshot size:`, querySnapshot.size);
+        
+        const docs = querySnapshot.docs.map(doc => {
+          const data = { id: doc.id, ...doc.data() };
+          if (collectionName === 'Recipe') {
+            console.log(`[Firebase-Recipe] Document ${doc.id}:`, {
+              name: data.name,
+              active: data.active,
+              category: data.category,
+              cost_per_kg_yield: data.cost_per_kg_yield,
+              container_type: data.container_type,
+              cuba_cost: data.cuba_cost,
+              cuba_weight: data.cuba_weight
+            });
+            console.log(`[Firebase-Recipe] ALL FIELDS for ${doc.id}:`, data);
+          }
+          return data;
+        });
+        
         console.log(`[Firebase] Successfully listed ${docs.length} documents from ${collectionName}`);
+        
+        if (collectionName === 'Recipe') {
+          console.log(`[Firebase-Recipe] Active recipes:`, docs.filter(r => r.active !== false).length);
+          console.log(`[Firebase-Recipe] Sample recipe data:`, docs[0]);
+        }
+        
+        
         return docs;
       } catch (error) {
         console.error(`[Firebase] Error listing documents from ${collectionName}:`, error);
+        console.error(`[Firebase] Error details:`, {
+          code: error.code,
+          message: error.message,
+          stack: error.stack
+        });
         // Rethrow the error so calling code can handle it
         throw new Error(`Failed to list data from ${collectionName}: ${error.message}`);
       }
@@ -103,8 +139,11 @@ const createEntity = (collectionName) => {
 
     // Delete document
     delete: async (id) => {
+      console.log(`[Firebase] Deleting document ${id} from ${collectionName}...`);
       const docRef = doc(db, collectionName, id);
       await deleteDoc(docRef);
+      console.log(`[Firebase] Successfully deleted document ${id} from ${collectionName}`);
+      return { id, deleted: true };
     },
 
     // Query with filters
@@ -153,6 +192,7 @@ export const MenuNote = createEntity('MenuNote');
 export const NutritionCategory = createEntity('NutritionCategory');
 export const NutritionFood = createEntity('NutritionFood');
 export const Order = createEntity('Order');
+export const OrderReceiving = createEntity('OrderReceiving');
 export const OrderWaste = createEntity('OrderWaste');
 export const PriceHistory = createEntity('PriceHistory');
 export const Recipe = createEntity('Recipe');
@@ -169,10 +209,30 @@ export const WeeklyMenu = createEntity('WeeklyMenu');
 export const UserEntity = createEntity('User');
 
 // Auth with User methods
-import { auth } from '../../lib/firebase';
+import { auth } from '../../lib/firebase.js';
 
 export const User = {
   ...auth,
+  
+  // Create user with specific ID
+  createWithId: async (userId, userData) => {
+    try {
+      const newUserData = {
+        id: userId,
+        ...userData,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      
+      const docRef = doc(db, 'User', userId);
+      await setDoc(docRef, newUserData);
+      
+      return { id: userId, ...newUserData };
+    } catch (error) {
+      console.error('Erro ao criar usuário com ID específico:', error);
+      throw new Error('Falha ao criar usuário: ' + error.message);
+    }
+  },
   
   // Get current user data - No authentication required
   me: async () => {
@@ -205,24 +265,34 @@ export const User = {
     try {
       const userId = 'mock-user-id'; // Em produção, pegar do usuário autenticado
       
+      
       // Primeiro, tenta buscar o usuário existente
-      let existingUser = await UserEntity.getById(userId);
+      let existingUser = null;
+      try {
+        existingUser = await UserEntity.getById(userId);
+      } catch (error) {
+      }
       
       if (existingUser) {
-        // Se existe, atualiza
-        await UserEntity.update(userId, {
+        // Se existe, atualiza usando update
+        const updatedData = {
           ...existingUser,
           ...userData,
           updatedAt: new Date()
-        });
+        };
+        await UserEntity.update(userId, updatedData);
       } else {
-        // Se não existe, cria um novo
-        await UserEntity.create({
+        // Se não existe, cria usando setDoc com o ID específico
+        const newUserData = {
           id: userId,
           ...userData,
           createdAt: new Date(),
           updatedAt: new Date()
-        });
+        };
+        
+        // Usar setDoc ao invés de create para especificar o ID
+        const docRef = doc(db, 'User', userId);
+        await setDoc(docRef, newUserData);
       }
       
       return {

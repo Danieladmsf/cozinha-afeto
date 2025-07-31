@@ -1,221 +1,291 @@
-import { useState, useCallback } from 'react';
-import { useToast } from "@/components/ui/use-toast";
-import { User } from "@/app/api/entities";
+import { useState, useEffect, useCallback } from 'react';
+import { CategoryType, User, Recipe } from '@/app/api/entities';
+import { useToast } from '@/components/ui';
+import { processTypes, defaultConfig, validationRules } from '@/lib/recipeConstants';
 
-export const useRecipeConfig = () => {
+/**
+ * Hook para gerenciar configurações da Ficha Técnica
+ */
+export function useRecipeConfig() {
   const { toast } = useToast();
   
-  // Estados de configuração
-  const [defaultNames, setDefaultNames] = useState({
-    preparation: "Preparo",
-    group: "Grupo"
-  });
-  
-  const [defaultStartOption, setDefaultStartOption] = useState("preparation");
+  const [config, setConfig] = useState(defaultConfig);
   const [configSaving, setConfigSaving] = useState(false);
-  const [configLoading, setConfigLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [categoryTypes, setCategoryTypes] = useState([]);
+  const [selectedCategoryType, setSelectedCategoryType] = useState('');
 
-  // Carregar configurações do usuário
-  const loadUserConfiguration = useCallback(async () => {
-    try {
-      setConfigLoading(true);
-      
-      // Tentar carregar configurações salvas do usuário
-      const userId = "default_user"; // ou pegar do contexto de autenticação
-      const userConfig = await User.get(userId);
-      
-      if (userConfig && userConfig.recipe_config) {
-        const config = userConfig.recipe_config;
-        
-        setDefaultNames({
-          preparation: config.default_preparation_name || "Preparo",
-          group: config.default_group_name || "Grupo"
-        });
-        
-        setDefaultStartOption(config.default_start_option || "preparation");
-      }
-      
-      return userConfig?.recipe_config || null;
-    } catch (error) {
-      console.error("Erro ao carregar configuração do usuário:", error);
-      // Usar configurações padrão em caso de erro
-      setDefaultNames({
-        preparation: "Preparo",
-        group: "Grupo"
-      });
-      setDefaultStartOption("preparation");
-      return null;
-    } finally {
-      setConfigLoading(false);
-    }
+  // Atualizar configuração
+  const updateConfig = useCallback((key, value) => {
+    setConfig(prev => ({
+      ...prev,
+      [key]: value
+    }));
   }, []);
 
-  // Salvar configurações do usuário
-  const saveConfiguration = useCallback(async () => {
+  // Carregar tipos de categoria do banco via API
+  const loadCategoryTypes = useCallback(async () => {
+    setLoading(true);
     try {
-      setConfigSaving(true);
+      const response = await fetch('/api/category-types');
+      const types = await response.json();
       
-      const userId = "default_user"; // ou pegar do contexto de autenticação
-      const configData = {
-        default_preparation_name: defaultNames.preparation,
-        default_group_name: defaultNames.group,
-        default_start_option: defaultStartOption,
-        updated_at: new Date()
-      };
-
-      // Primeiro tentar obter o usuário existente
-      let user;
-      try {
-        user = await User.get(userId);
-      } catch (error) {
-        // Se usuário não existe, criar um novo
-        user = null;
+      if (!response.ok) {
+        throw new Error(types.error || 'Erro ao carregar tipos');
       }
-
-      if (user) {
-        // Atualizar usuário existente
-        await User.update(userId, {
-          ...user,
-          recipe_config: configData
-        });
-      } else {
-        // Criar novo usuário com configurações
-        await User.create({
-          id: userId,
-          recipe_config: configData,
-          created_at: new Date()
-        });
-      }
-
-      toast({
-        title: "Sucesso",
-        description: "Configurações salvas com sucesso!",
-      });
-
-      return true;
+      
+      setCategoryTypes(types || []);
+      return { success: true, types };
     } catch (error) {
-      console.error("Erro ao salvar configuração:", error);
+      console.error('[useRecipeConfig] Erro ao carregar tipos de categoria:', error);
       toast({
         title: "Erro",
-        description: "Não foi possível salvar as configurações.",
-        variant: "destructive",
+        description: "Não foi possível carregar os tipos de categoria.",
+        variant: "destructive"
       });
-      throw error;
+      return { success: false, error };
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
+
+  // Carregar configuração do usuário via API
+  const loadUserConfiguration = useCallback(async () => {
+    try {
+      // Buscar configuração do usuário atual via API
+      const response = await fetch('/api/user');
+      const userData = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(userData.error || 'Erro ao carregar usuário');
+      }
+      
+      if (userData?.recipe_config) {
+        const categoryType = userData.recipe_config.selected_category_type || 'refeicoes';
+        setSelectedCategoryType(categoryType);
+        updateConfig('selected_category_type', categoryType);
+      }
+      return { success: true, userData };
+    } catch (error) {
+      console.error('[useRecipeConfig] Erro ao carregar configuração do usuário:', error);
+      return { success: false, error };
+    }
+  }, [updateConfig]);
+
+  // Salvar configuração no banco de dados
+  const saveConfiguration = useCallback(async (categoryType) => {
+    setConfigSaving(true);
+    
+    try {
+      
+      // Atualizar configuração do usuário via API
+      const response = await fetch('/api/user', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          recipe_config: {
+            selected_category_type: categoryType,
+            selected_category: config.selectedCategory || '',
+            selected_subcategory: config.selectedSubcategory || ''
+          }
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Erro ao salvar configuração');
+      }
+      
+      setSelectedCategoryType(categoryType);
+      updateConfig('selected_category_type', categoryType);
+      
+      
+      toast({
+        title: "Configurações salvas",
+        description: "Suas preferências foram atualizadas com sucesso."
+      });
+      
+      return { success: true };
+    } catch (error) {
+      console.error('[useRecipeConfig] Erro ao salvar configurações:', error);
+      toast({
+        title: "Erro ao salvar",
+        description: "Não foi possível salvar suas configurações.",
+        variant: "destructive"
+      });
+      return { success: false, error };
     } finally {
       setConfigSaving(false);
     }
-  }, [defaultNames, defaultStartOption, toast]);
+  }, [config, updateConfig, toast]);
 
-  // Atualizar nome padrão de preparação
-  const updatePreparationName = useCallback((name) => {
-    setDefaultNames(prev => ({
-      ...prev,
-      preparation: name || "Preparo"
-    }));
-  }, []);
+  // Helper function to recursively remove undefined values
+  const removeUndefined = (obj) => {
+    if (obj === null || typeof obj !== 'object') {
+      return obj;
+    }
 
-  // Atualizar nome padrão de grupo
-  const updateGroupName = useCallback((name) => {
-    setDefaultNames(prev => ({
-      ...prev,
-      group: name || "Grupo"
-    }));
-  }, []);
+    if (Array.isArray(obj)) {
+      return obj.map(removeUndefined).filter(item => item !== undefined);
+    }
 
-  // Atualizar opção de início padrão
-  const updateDefaultStartOption = useCallback((option) => {
-    setDefaultStartOption(option);
-  }, []);
+    const newObj = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        const value = obj[key];
+        if (value !== undefined) {
+          newObj[key] = removeUndefined(value);
+        }
+      }
+    }
+    return newObj;
+  };
 
-  // Resetar configurações para padrão
-  const resetToDefaults = useCallback(() => {
-    setDefaultNames({
-      preparation: "Preparo",
-      group: "Grupo"
-    });
-    setDefaultStartOption("preparation");
-  }, []);
-
-  // Gerar configuração inicial para nova receita
-  const getInitialRecipeConfig = useCallback(() => {
-    return {
-      defaultPreparationName: defaultNames.preparation,
-      defaultGroupName: defaultNames.group,
-      startWithPreparation: defaultStartOption === "preparation"
-    };
-  }, [defaultNames, defaultStartOption]);
-
-  // Aplicar configurações a uma preparação
-  const applyConfigToPreparation = useCallback((preparation, index = 0) => {
-    const config = getInitialRecipeConfig();
+  // Salvar receita completa (dados básicos + preparações)
+  const saveRecipe = useCallback(async (recipeData, preparationsData = []) => {
+    setConfigSaving(true);
     
-    return {
-      ...preparation,
-      name: preparation.name || `${config.defaultPreparationName} ${index + 1}`,
-      // Aplicar outras configurações conforme necessário
-    };
-  }, [getInitialRecipeConfig]);
+    try {
+      console.log('[useRecipeConfig] Iniciando salvamento da receita:', {
+        id: recipeData.id,
+        name: recipeData.name,
+        hasId: !!recipeData.id
+      });
 
-  // Aplicar configurações a um grupo
-  const applyConfigToGroup = useCallback((group, index = 0) => {
-    const config = getInitialRecipeConfig();
-    
-    return {
-      ...group,
-      name: group.name || `${config.defaultGroupName} ${index + 1}`,
-      // Aplicar outras configurações conforme necessário
-    };
-  }, [getInitialRecipeConfig]);
+      // Preparar dados da receita para salvamento (sanitizar undefined values)
+      const recipeToSave = {
+        name: recipeData.name || '',
+        name_complement: recipeData.name_complement || '',
+        category: recipeData.category || '',
+        prep_time: parseFloat(recipeData.prep_time) || 0,
+        total_weight: parseFloat(recipeData.total_weight) || 0,
+        yield_weight: parseFloat(recipeData.yield_weight) || 0,
+        cuba_weight: parseFloat(recipeData.cuba_weight) || 0,
+        total_cost: parseFloat(recipeData.total_cost) || 0,
+        cost_per_kg_raw: parseFloat(recipeData.cost_per_kg_raw) || 0,
+        cost_per_kg_yield: parseFloat(recipeData.cost_per_kg_yield) || 0,
+        cuba_cost: parseFloat(recipeData.cuba_cost) || 0, // NOVO: Campo do custo da cuba
+        portion_cost: parseFloat(recipeData.portion_cost) || 0, // NOVO: Campo do custo da porção
+        active: recipeData.active !== undefined ? recipeData.active : true,
+        instructions: recipeData.instructions || '',
+        preparations: preparationsData || []
+      };
 
-  // Validar configurações
-  const validateConfiguration = useCallback(() => {
+      // Recursively remove undefined values to prevent Firebase errors
+      const sanitizedRecipe = removeUndefined(recipeToSave);
+
+      console.log('💾 [CONFIG-SAVE-DEBUG] portion_cost incluído nos dados:', sanitizedRecipe.portion_cost);
+      console.log('💾 [CONFIG-SAVE-DEBUG] cuba_cost incluído nos dados:', sanitizedRecipe.cuba_cost);
+      console.log('💾 [CONFIG-SAVE-DEBUG] cost_per_kg_yield:', sanitizedRecipe.cost_per_kg_yield);
+      console.log('💾 [CONFIG-SAVE-DEBUG] cuba_weight:', sanitizedRecipe.cuba_weight);
+
+      let result;
+      
+      if (recipeData.id) {
+        // Atualizar receita existente
+        console.log('[useRecipeConfig] Atualizando receita existente:', recipeData.id);
+        result = await Recipe.update(recipeData.id, sanitizedRecipe);
+        
+        toast({
+          title: "Receita atualizada",
+          description: `"${recipeData.name}" foi atualizada com sucesso.`
+        });
+      } else {
+        // Criar nova receita
+        console.log('[useRecipeConfig] Criando nova receita');
+        result = await Recipe.create(sanitizedRecipe);
+        
+        toast({
+          title: "Receita criada",
+          description: `"${recipeData.name}" foi criada com sucesso.`
+        });
+      }
+
+      console.log('[useRecipeConfig] Receita salva com sucesso:', result);
+      return { success: true, recipe: result };
+      
+    } catch (error) {
+      console.error('[useRecipeConfig] Erro ao salvar receita:', error);
+      
+      toast({
+        title: "Erro ao salvar",
+        description: "Não foi possível salvar a receita: " + error.message,
+        variant: "destructive"
+      });
+      
+      return { success: false, error };
+    } finally {
+      setConfigSaving(false);
+    }
+  }, [toast]);
+
+  // Resetar configuração
+  const resetConfig = useCallback(() => {
+    setConfig(defaultConfig);
+  }, []);
+
+  // Validar configuração
+  const validateConfig = useCallback((configData) => {
     const errors = [];
-
-    if (!defaultNames.preparation?.trim()) {
-      errors.push("Nome padrão de preparação não pode estar vazio");
+    
+    // Adicionar validações específicas aqui
+    if (!configData.selectedCategory) {
+      errors.push('Categoria deve ser selecionada');
     }
-
-    if (!defaultNames.group?.trim()) {
-      errors.push("Nome padrão de grupo não pode estar vazio");
-    }
-
-    if (!["preparation", "group"].includes(defaultStartOption)) {
-      errors.push("Opção de início deve ser 'preparation' ou 'group'");
-    }
-
+    
     return {
       isValid: errors.length === 0,
       errors
     };
-  }, [defaultNames, defaultStartOption]);
+  }, []);
+
+  // Obter tipos de processo
+  const getProcessTypes = useCallback(() => {
+    return processTypes;
+  }, []);
+
+  // Obter regras de validação
+  const getValidationRules = useCallback(() => {
+    return validationRules;
+  }, []);
+
+  // Carregar dados ao montar o componente
+  useEffect(() => {
+    const initializeConfig = async () => {
+      await Promise.all([
+        loadCategoryTypes(),
+        loadUserConfiguration()
+      ]);
+    };
+    
+    initializeConfig();
+  }, [loadCategoryTypes, loadUserConfiguration]);
 
   return {
-    // Estados
-    defaultNames,
-    defaultStartOption,
+    // Estado
+    config,
     configSaving,
-    configLoading,
-
-    // Operações principais
-    loadUserConfiguration,
+    loading,
+    categoryTypes,
+    selectedCategoryType,
+    
+    // Ações
+    updateConfig,
     saveConfiguration,
-
-    // Atualização de configurações
-    updatePreparationName,
-    updateGroupName,
-    updateDefaultStartOption,
-    resetToDefaults,
-
-    // Aplicação de configurações
-    getInitialRecipeConfig,
-    applyConfigToPreparation,
-    applyConfigToGroup,
-
-    // Validação
-    validateConfiguration,
-
-    // Setters diretos (para casos especiais)
-    setDefaultNames,
-    setDefaultStartOption
+    saveRecipe,
+    resetConfig,
+    loadCategoryTypes,
+    loadUserConfiguration,
+    
+    // Utilitários
+    validateConfig,
+    getProcessTypes,
+    getValidationRules,
+    
+    // Setters
+    setSelectedCategoryType
   };
-};
+}

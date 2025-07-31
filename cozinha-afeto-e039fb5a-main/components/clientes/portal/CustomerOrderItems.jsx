@@ -102,7 +102,7 @@ export default function CustomerOrderItems({
                         <Input
                           ref={el => quantityInputRefs?.current && (quantityInputRefs.current[index] = el)}
                           type="text"
-                          inputMode="numeric"
+                          inputMode="decimal"
                           value={isThisQuantityInputEditing ? quantityEditingValue : formattedQuantity(item.quantity)}
                           onFocus={(e) => handleQuantityFocus(e, index, formattedQuantity(item.quantity))}
                           onChange={(e) => handleQuantityInputChange(index, e.target.value)}
@@ -254,7 +254,7 @@ export default function CustomerOrderItems({
                         <Input
                           ref={el => quantityInputRefs?.current && (quantityInputRefs.current[index] = el)}
                           type="text"
-                          inputMode="numeric"
+                          inputMode="decimal"
                           value={isThisQuantityInputEditing ? quantityEditingValue : formattedQuantity(item.quantity)}
                           onFocus={(e) => handleQuantityFocus(e, index, formattedQuantity(item.quantity))}
                           onChange={(e) => handleQuantityInputChange(index, e.target.value)}

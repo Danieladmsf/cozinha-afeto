@@ -1,284 +1,165 @@
-import { useState, useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
+import { RecipeCalculator } from '@/lib/recipeCalculator';
 
-export const useRecipeInterface = () => {
-  // Estados de controle de edição
-  const [isEditing, setIsEditing] = useState(false);
-  const [currentRecipeId, setCurrentRecipeId] = useState(null);
-
-  // Estados de diálogos e modais
-  const [searchModalOpen, setSearchModalOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [showConfigDialog, setShowConfigDialog] = useState(false);
-  const [isDetailedProcessDialogOpen, setDetailedProcessDialogOpen] = useState(false);
-
-  // Estados de busca e filtros
-  const [searchQuery, setSearchQuery] = useState('');
-  const [ingredientSearchTerm, setIngredientSearchTerm] = useState("");
-  const [sourceRecipeSearch, setSourceRecipeSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState("");
-
-  // Estados de seleção atual
-  const [currentPrepIndex, setCurrentPrepIndex] = useState(0);
-  const [currentGroupIndex, setCurrentGroupIndex] = useState(0);
-  const [currentIngredient, setCurrentIngredient] = useState(null);
-  const [currentPrepIndexForDetail, setCurrentPrepIndexForDetail] = useState(null);
-  const [currentItemIndexForDetail, setCurrentItemIndexForDetail] = useState(null);
-
-  // Estados de formulários
-  const [processFormData, setProcessFormData] = useState({
-    weight_frozen: 0,
-    weight_thawed: 0,
-    weight_clean: 0,
-    weight_cooked: 0
-  });
-
-  // Estados para cópia de receitas
-  const [selectedSourceRecipe, setSelectedSourceRecipe] = useState(null);
-  const [selectedStageLevel, setSelectedStageLevel] = useState(null);
-  const [availableStages, setAvailableStages] = useState([]);
-  const [recipePreview, setRecipePreview] = useState(null);
-
-  // Estados de prints e relatórios
-  const [showPrintDialog, setShowPrintDialog] = useState(false);
-  const [showCollectDialog, setShowCollectDialog] = useState(false);
-
-  // Handlers para diálogos
-  const openSearchModal = useCallback(() => {
-    setSearchModalOpen(true);
+/**
+ * Hook para gerenciar lógicas de interface da Ficha Técnica
+ * Extraído automaticamente de RecipeTechnicall.jsx
+ */
+export function useRecipeInterface({ recipeData, preparationsData, updateRecipeData }) {
+  
+  // Usar RecipeCalculator para cálculos quando dados mudarem
+  useEffect(() => {
+    if (preparationsData?.length > 0) {
+      try {
+        const metrics = RecipeCalculator.calculateRecipeMetrics(preparationsData, recipeData);
+        // Atualizar dados calculados
+        Object.keys(metrics).forEach(key => {
+          updateRecipeData(key, metrics[key]);
+        });
+        console.log('✅ [useRecipeInterface] Métricas calculadas e atualizadas');
+        console.log('🔧 [useRecipeInterface] portion_cost atualizado:', metrics.portion_cost);
+        console.log('🔧 [useRecipeInterface] cuba_cost atualizado:', metrics.cuba_cost);
+      } catch (error) {
+        console.error('❌ [useRecipeInterface] Erro no cálculo automático:', error);
+      }
+    }
+  }, [preparationsData?.length]);
+  
+  // Handlers de navegação
+  const handleTabChange = useCallback((setActiveTab, newTab) => {
+    setActiveTab(newTab);
   }, []);
 
-  const closeSearchModal = useCallback(() => {
-    setSearchModalOpen(false);
-    setSearchQuery('');
+  const handleSearchFocus = useCallback((setSearchOpen) => {
+    setSearchOpen(true);
   }, []);
 
-  const openConfigDialog = useCallback(() => {
-    setShowConfigDialog(true);
+  const handleSearchBlur = useCallback((setSearchOpen) => {
+    setTimeout(() => setSearchOpen(false), 200);
   }, []);
 
-  const closeConfigDialog = useCallback(() => {
-    setShowConfigDialog(false);
+  // Handlers de modais
+  const openModal = useCallback((setModalOpen) => {
+    setModalOpen(true);
   }, []);
 
-  const openDetailedProcessDialog = useCallback((ingredient, prepIndex, itemIndex) => {
-    setCurrentIngredient(ingredient);
-    setCurrentPrepIndexForDetail(prepIndex);
-    setCurrentItemIndexForDetail(itemIndex);
-    setDetailedProcessDialogOpen(true);
-  }, []);
-
-  const closeDetailedProcessDialog = useCallback(() => {
-    setDetailedProcessDialogOpen(false);
-    setCurrentIngredient(null);
-    setCurrentPrepIndexForDetail(null);
-    setCurrentItemIndexForDetail(null);
-    setProcessFormData({
-      weight_frozen: 0,
-      weight_thawed: 0,
-      weight_clean: 0,
-      weight_cooked: 0
-    });
-  }, []);
-
-  // Handlers para busca
-  const updateSearchQuery = useCallback((query) => {
-    setSearchQuery(query);
-  }, []);
-
-  const updateIngredientSearchTerm = useCallback((term) => {
-    setIngredientSearchTerm(term);
-  }, []);
-
-  const updateSourceRecipeSearch = useCallback((term) => {
-    setSourceRecipeSearch(term);
-  }, []);
-
-  const clearAllSearches = useCallback(() => {
-    setSearchQuery('');
-    setIngredientSearchTerm('');
-    setSourceRecipeSearch('');
-  }, []);
-
-  // Handlers para navegação
-  const setActivePreparation = useCallback((index) => {
-    setCurrentPrepIndex(index);
-    setCurrentGroupIndex(0); // Reset group quando muda preparação
-  }, []);
-
-  const setActiveGroup = useCallback((index) => {
-    setCurrentGroupIndex(index);
-  }, []);
-
-  // Handlers para seleção de categoria
-  const updateSelectedCategory = useCallback((category) => {
-    setSelectedCategory(category);
-  }, []);
-
-  // Handlers para edição
-  const startEditing = useCallback((recipeId = null) => {
-    setIsEditing(true);
-    if (recipeId) {
-      setCurrentRecipeId(recipeId);
+  const closeModal = useCallback((setModalOpen, resetFunction = null) => {
+    setModalOpen(false);
+    if (resetFunction) {
+      resetFunction();
     }
   }, []);
 
-  const stopEditing = useCallback(() => {
-    setIsEditing(false);
-    setCurrentRecipeId(null);
+  const openProcessCreatorModal = useCallback((setIsProcessCreatorOpen, setSelectedProcesses) => {
+    setSelectedProcesses([]);
+    setIsProcessCreatorOpen(true);
   }, []);
 
-  // Handlers para formulários
-  const updateProcessFormData = useCallback((field, value) => {
-    setProcessFormData(prev => ({
+  const closeProcessCreatorModal = useCallback((setIsProcessCreatorOpen, setSelectedProcesses) => {
+    setIsProcessCreatorOpen(false);
+    setSelectedProcesses([]);
+  }, []);
+
+  // Handlers de formulário
+  const handleInputChange = useCallback((setRecipeData, e) => {
+    const { name, value } = e.target;
+    
+    // Ignorar mudanças no campo cuba_weight pois é calculado automaticamente
+    if (name === 'cuba_weight') {
+      console.log('⚠️ [INTERFACE] Tentativa de alterar cuba_weight ignorada - campo é calculado automaticamente');
+      return;
+    }
+    
+    setRecipeData(prev => ({
       ...prev,
-      [field]: parseFloat(value) || 0
+      [name]: value
     }));
   }, []);
 
-  const resetProcessFormData = useCallback(() => {
-    setProcessFormData({
-      weight_frozen: 0,
-      weight_thawed: 0,
-      weight_clean: 0,
-      weight_cooked: 0
-    });
+  const handleSelectChange = useCallback((setRecipeData, field, value) => {
+    setRecipeData(prev => ({
+      ...prev,
+      [field]: value
+    }));
   }, []);
 
-  // Handlers para cópia de receitas
-  const setSourceRecipe = useCallback((recipe) => {
-    setSelectedSourceRecipe(recipe);
-    setSelectedStageLevel(null);
-    setRecipePreview(null);
+  const handleNumberInputChange = useCallback((setRecipeData, field, value) => {
+    const numValue = parseInt(value) || 0;
+    setRecipeData(prev => ({
+      ...prev,
+      [field]: numValue
+    }));
   }, []);
 
-  const setStageLevel = useCallback((stage) => {
-    setSelectedStageLevel(stage);
+  // Handlers de processo
+  const handleProcessSelection = useCallback((setSelectedProcesses, processId, checked) => {
+    setSelectedProcesses(prev => 
+      checked 
+        ? [...prev, processId]
+        : prev.filter(p => p !== processId)
+    );
   }, []);
 
-  const clearRecipeCopySelection = useCallback(() => {
-    setSelectedSourceRecipe(null);
-    setSelectedStageLevel(null);
-    setAvailableStages([]);
-    setRecipePreview(null);
+  // Handlers de ações
+  const handleSave = useCallback(async (
+    setSaving, 
+    recipeData, 
+    preparationsData, 
+    saveRecipe
+  ) => {
+    setSaving(true);
+    
+    try {
+      const result = await saveRecipe(recipeData, preparationsData);
+      return result;
+    } finally {
+      setSaving(false);
+    }
   }, []);
 
-  // Handlers para prints
-  const openPrintDialog = useCallback(() => {
-    setShowPrintDialog(true);
+  const handleClear = useCallback((resetRecipeData, resetModals, setActiveTab) => {
+    resetRecipeData();
+    resetModals();
+    setActiveTab("ficha-tecnica");
   }, []);
 
-  const closePrintDialog = useCallback(() => {
-    setShowPrintDialog(false);
+  // Utilitários de interface
+  const formatDisplayValue = useCallback((value, type = 'text') => {
+    if (type === 'currency') {
+      const num = parseFloat(value) || 0;
+      return new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: 'BRL'
+      }).format(num);
+    }
+    
+    if (type === 'weight') {
+      const num = parseFloat(value) || 0;
+      return num.toFixed(3).replace('.', ',');
+    }
+    
+    if (type === 'percentage') {
+      const num = parseFloat(value) || 0;
+      return num.toFixed(2).replace('.', ',') + '%';
+    }
+    
+    return value;
   }, []);
-
-  const openCollectDialog = useCallback(() => {
-    setShowCollectDialog(true);
-  }, []);
-
-  const closeCollectDialog = useCallback(() => {
-    setShowCollectDialog(false);
-  }, []);
-
-  // Função para resetar toda a interface
-  const resetInterface = useCallback(() => {
-    setIsEditing(false);
-    setCurrentRecipeId(null);
-    setSearchModalOpen(false);
-    setSearchOpen(false);
-    setShowConfigDialog(false);
-    setDetailedProcessDialogOpen(false);
-    clearAllSearches();
-    setCurrentPrepIndex(0);
-    setCurrentGroupIndex(0);
-    setCurrentIngredient(null);
-    setSelectedCategory("");
-    resetProcessFormData();
-    clearRecipeCopySelection();
-    setShowPrintDialog(false);
-    setShowCollectDialog(false);
-  }, [clearAllSearches, resetProcessFormData, clearRecipeCopySelection]);
 
   return {
-    // Estados de controle
-    isEditing,
-    currentRecipeId,
-
-    // Estados de diálogos
-    searchModalOpen,
-    searchOpen,
-    showConfigDialog,
-    isDetailedProcessDialogOpen,
-    showPrintDialog,
-    showCollectDialog,
-
-    // Estados de busca
-    searchQuery,
-    ingredientSearchTerm,
-    sourceRecipeSearch,
-    selectedCategory,
-
-    // Estados de seleção
-    currentPrepIndex,
-    currentGroupIndex,
-    currentIngredient,
-    currentPrepIndexForDetail,
-    currentItemIndexForDetail,
-
-    // Estados de formulários
-    processFormData,
-
-    // Estados de cópia de receitas
-    selectedSourceRecipe,
-    selectedStageLevel,
-    availableStages,
-    recipePreview,
-
-    // Setters diretos (para casos especiais)
-    setIsEditing,
-    setCurrentRecipeId,
-    setSearchOpen,
-    setAvailableStages,
-    setRecipePreview,
-
-    // Handlers de diálogos
-    openSearchModal,
-    closeSearchModal,
-    openConfigDialog,
-    closeConfigDialog,
-    openDetailedProcessDialog,
-    closeDetailedProcessDialog,
-
-    // Handlers de busca
-    updateSearchQuery,
-    updateIngredientSearchTerm,
-    updateSourceRecipeSearch,
-    clearAllSearches,
-
-    // Handlers de navegação
-    setActivePreparation,
-    setActiveGroup,
-    updateSelectedCategory,
-
-    // Handlers de edição
-    startEditing,
-    stopEditing,
-
-    // Handlers de formulários
-    updateProcessFormData,
-    resetProcessFormData,
-
-    // Handlers de cópia
-    setSourceRecipe,
-    setStageLevel,
-    clearRecipeCopySelection,
-
-    // Handlers de prints
-    openPrintDialog,
-    closePrintDialog,
-    openCollectDialog,
-    closeCollectDialog,
-
-    // Utilitários
-    resetInterface
+    handleTabChange,
+    handleSearchFocus,
+    handleSearchBlur,
+    openModal,
+    closeModal,
+    openProcessCreatorModal,
+    closeProcessCreatorModal,
+    handleInputChange,
+    handleSelectChange,
+    handleNumberInputChange,
+    handleProcessSelection,
+    handleSave,
+    handleClear,
+    formatDisplayValue
   };
-};
+}

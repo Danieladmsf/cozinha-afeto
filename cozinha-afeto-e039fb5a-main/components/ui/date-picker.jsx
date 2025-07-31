@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Calendar as CalendarIcon } from "lucide-react";
@@ -18,6 +18,11 @@ export default function DatePicker({
   className,
   ...props
 }) {
+  const [isClient, setIsClient] = useState(false);
+  
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
   // Garantir que selected seja uma instância válida de Date, sem ajuste de timezone
   const ensureValidDate = (date) => {
     if (!date) return undefined;
@@ -78,7 +83,7 @@ export default function DatePicker({
             )}
           >
             <CalendarIcon className="mr-2 h-4 w-4" />
-            {selectedDate ? format(selectedDate, "PPP", { locale: ptBR }) : <span>{placeholder}</span>}
+            {selectedDate && isClient ? format(selectedDate, "PPP", { locale: ptBR }) : <span>{placeholder}</span>}
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-0">

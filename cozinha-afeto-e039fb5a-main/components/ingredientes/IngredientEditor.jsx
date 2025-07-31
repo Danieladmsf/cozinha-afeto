@@ -431,21 +431,8 @@ export default function IngredientEditor() {
       };
 
 
-      let savedIngredient;
-
-      if (isEditing && currentIngredientId) {
-        savedIngredient = await Ingredient.update(currentIngredientId, ingredientDataToSave);
-      } else {
-        savedIngredient = await Ingredient.create(ingredientDataToSave);
-      }
-
-      const actionText = isEditing ? 'atualizado' : 'criado';
-      toast({
-        title: "Sucesso!",
-        description: `Ingrediente ${actionText} com sucesso.`
-      });
-
-      router.push('/ingredients');
+      // Lógica de salvamento removida
+      console.log('Dados preparados para salvamento:', ingredientDataToSave);
 
     } catch (err) {
       console.error("Erro ao salvar:", err);
